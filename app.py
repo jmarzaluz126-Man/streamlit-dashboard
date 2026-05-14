@@ -1,158 +1,88 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import numpy as np
+from collections import Counter
 
-st.set_page_config(page_title="TLV | Decision Dashboard", layout="wide")
+st.set_page_config(page_title="Dashboard TeleVía", layout="wide")
 
-st.title("📊 TLV | Decision Dashboard (Nivel Ejecutivo)")
+# =========================
+# LOAD DATA
+# =========================
+df = pd.read_excel("Encuestas concesiones TLV.xlsx")
 
-uploaded_file = st.file_uploader("Sube Excel TLV", type=["xlsx"])
+# =========================
+# CLEAN TEXT FUNCTION
+# =========================
+def clean_text(x):
+    if pd.isna(x):
+        return None
+    x = str(x).strip().lower()
+    if x in ["", ".", "ok", "sin comentarios", "ninguno", "no puedo opinar"]:
+        return None
+    if len(x) < 10:
+        return None
+    return x
 
-if uploaded_file:
+# =========================
+# COMMENT COLUMNS (AJUSTA SI CAMBIAN NOMBRES)
+# =========================
+col_pos = "¿Qué aspectos considera que TeleVía realiza correctamente y debe mantener?"
+col_neg = "¿Qué aspectos considera que TeleVía realiza incorrectamente y debe corregir, (Que no este mencionado arriba)?"
+col_extra = "Comentarios adicionales / contacto para seguimiento (nombre y correo si desea respuesta personalizada):"
 
-    df = pd.read_excel(uploaded_file)
-    df.columns = df.columns.str.strip().str.replace("\n", " ").str.replace("\xa0", " ")
+df["pos_clean"] = df[col_pos].apply(clean_text)
+df["neg_clean"] = df[col_neg].apply(clean_text)
 
-    # ─────────────────────────────────────────
-    # DETECCIÓN ROBUSTA DE CONCESIÓN
-    # ─────────────────────────────────────────
-    concesion_col = [c for c in df.columns if "conces" in c.lower()]
-    if not concesion_col:
-        st.error("No se encontró columna de concesión")
-        st.stop()
+# =========================
+# TABS
+# =========================
+tab1, tab2, tab3 = st.tabs([
+    "📊 Ejecutivo",
+    "📈 KPIs",
+    "💬 Voz del Cliente"
+])
 
-    concesion_col = concesion_col[0]
+# =========================
+# TAB 3 - VOZ DEL CLIENTE (VERSIÓN B BIEN HECHA)
+# =========================
+with tab3:
 
-    # ─────────────────────────────────────────
-    # PREGUNTAS NUMÉRICAS
-    # ─────────────────────────────────────────
-    q_cols = [
-        c for c in df.columns
-        if c != concesion_col and pd.api.types.is_numeric_dtype(df[c])
-    ]
+    st.title("💬 Voz del Cliente")
 
-    if len(q_cols) < 3:
-        st.error("No hay suficientes variables numéricas")
-        st.stop()
+    # -------------------------
+    # FRECUENCIAS
+    # -------------------------
+    def get_top(series, n=5):
+        texts = series.dropna().tolist()
+        words = []
+        for t in texts:
+            words += t.split()
+        return Counter(words).most_common(n)
 
-    # ─────────────────────────────────────────
-    # SCORES
-    # ─────────────────────────────────────────
-    df["Score_Global"] = df[q_cols].mean(axis=1)
-
-    conc = df.groupby(concesion_col)["Score_Global"].mean().sort_values(ascending=False)
-
-    global_score = df["Score_Global"].mean()
-    best = conc.idxmax()
-    worst = conc.idxmin()
-
-    # ─────────────────────────────────────────
-    # CAPA 1: ESTADO GENERAL
-    # ─────────────────────────────────────────
-    st.subheader("🧭 Estado del Sistema")
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    c1.metric("Score Global", round(global_score, 2))
-    c2.metric("Mejor Concesión", best)
-    c3.metric("Concesión Crítica", worst)
-    c4.metric("Total Respuestas", len(df))
-
-    st.divider()
-
-    # ─────────────────────────────────────────
-    # CAPA 2: DIAGNÓSTICO (NO DESCRIPTIVO, PROBLEMÁTICO)
-    # ─────────────────────────────────────────
-    st.subheader("⚠ Diagnóstico Ejecutivo")
-
-    worst_score = conc.min()
-    best_score = conc.max()
-    spread = best_score - worst_score
-
-    # lógica de riesgo (IMPORTANTE)
-    if global_score >= 8:
-        health = "🟢 Sistema estable"
-    elif global_score >= 6.5:
-        health = "🟡 Sistema en tensión"
-    else:
-        health = "🔴 Sistema crítico"
-
-    st.info(f"""
-    Estado general: {health}
-
-    • Brecha entre concesiones: {round(spread,2)} puntos  
-    • Riesgo principal: desigualdad operativa entre concesiones  
-    • Concesión con peor desempeño: {worst} ({round(worst_score,2)})  
-    • Concesión dominante: {best} ({round(best_score,2)})  
-    """)
+    st.subheader("🟢 Fortalezas más mencionadas")
+    pos_texts = df["pos_clean"].dropna()
+    pos_top = Counter(" ".join(pos_texts).split()).most_common(8)
+    for word, freq in pos_top:
+        st.write(f"- {word} ({freq})")
 
     st.divider()
 
-    # ─────────────────────────────────────────
-    # CAPA 3: ACCIONES (LO MÁS IMPORTANTE)
-    # ─────────────────────────────────────────
-    st.subheader("🎯 Acciones Recomendadas")
-
-    actions = []
-
-    if worst_score < 6.5:
-        actions.append("🔴 Intervención inmediata en concesión crítica (operación + financiero)")
-
-    if spread > 2:
-        actions.append("🟡 Homologar procesos entre concesiones (alta variabilidad detectada)")
-
-    if global_score < 7.5:
-        actions.append("🟡 Revisión de estrategia de servicio integral")
-
-    actions.append("🟢 Mantener prácticas de concesión líder como benchmark interno")
-
-    for a in actions:
-        st.write(a)
+    st.subheader("🔴 Problemas más mencionados")
+    neg_texts = df["neg_clean"].dropna()
+    neg_top = Counter(" ".join(neg_texts).split()).most_common(8)
+    for word, freq in neg_top:
+        st.write(f"- {word} ({freq})")
 
     st.divider()
 
-    # ─────────────────────────────────────────
-    # VISUAL 1: RANKING EJECUTIVO
-    # ─────────────────────────────────────────
-    st.subheader("🏢 Ranking de Concesiones")
+    # -------------------------
+    # EXAMPLES FILTERED (LO QUE PEDISTE)
+    # -------------------------
+    st.subheader("🟡 Evidencia real (comentarios filtrados)")
 
-    rank_df = conc.reset_index()
-    rank_df.columns = ["Concesión", "Score"]
+    st.markdown("### 🔴 Problemas relevantes")
+    for c in df["neg_clean"].dropna().head(6):
+        st.write(f"• {c}")
 
-    fig = px.bar(
-        rank_df,
-        x="Concesión",
-        y="Score",
-        text_auto=True,
-        color="Score",
-        color_continuous_scale=["red", "yellow", "green"]
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-    # ─────────────────────────────────────────
-    # VISUAL 2: DISTRIBUCIÓN DE RIESGO
-    # ─────────────────────────────────────────
-    st.subheader("📉 Distribución de Riesgo")
-
-    df["Riesgo"] = pd.cut(
-        df["Score_Global"],
-        bins=[0, 6.5, 7.9, 10],
-        labels=["Crítico", "Medio", "Alto"]
-    )
-
-    risk_df = df["Riesgo"].value_counts().reset_index()
-    risk_df.columns = ["Nivel", "Cantidad"]
-
-    fig2 = px.pie(risk_df, names="Nivel", values="Cantidad")
-    st.plotly_chart(fig2, use_container_width=True)
-
-    # ─────────────────────────────────────────
-    # DETALLE SOLO BAJO DEMANDA
-    # ─────────────────────────────────────────
-    with st.expander("📊 Ver dataset completo"):
-        st.dataframe(df)
-
-else:
-    st.warning("Sube tu archivo Excel TLV para generar el dashboard")
+    st.markdown("### 🟢 Fortalezas relevantes")
+    for c in df["pos_clean"].dropna().head(6):
+        st.write(f"• {c}")
