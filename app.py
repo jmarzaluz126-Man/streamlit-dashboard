@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import numpy as np
 
-st.set_page_config(page_title="TLV Decision Dashboard v3", layout="wide")
+st.set_page_config(page_title="TLV | Decision Dashboard", layout="wide")
 
-st.title("📊 TLV | Decision Dashboard v3")
+st.title("📊 TLV | Decision Dashboard (Nivel Ejecutivo)")
 
 uploaded_file = st.file_uploader("Sube Excel TLV", type=["xlsx"])
 
@@ -14,7 +15,7 @@ if uploaded_file:
     df.columns = df.columns.str.strip().str.replace("\n", " ").str.replace("\xa0", " ")
 
     # ─────────────────────────────────────────
-    # DETECCIÓN DE CONCESIÓN
+    # DETECCIÓN ROBUSTA DE CONCESIÓN
     # ─────────────────────────────────────────
     concesion_col = [c for c in df.columns if "conces" in c.lower()]
     if not concesion_col:
@@ -24,92 +25,87 @@ if uploaded_file:
     concesion_col = concesion_col[0]
 
     # ─────────────────────────────────────────
-    # VARIABLES NUMÉRICAS
+    # PREGUNTAS NUMÉRICAS
     # ─────────────────────────────────────────
-    q_cols = [c for c in df.columns if c != concesion_col and pd.api.types.is_numeric_dtype(df[c])]
+    q_cols = [
+        c for c in df.columns
+        if c != concesion_col and pd.api.types.is_numeric_dtype(df[c])
+    ]
 
     if len(q_cols) < 3:
-        st.error("Dataset insuficiente")
+        st.error("No hay suficientes variables numéricas")
         st.stop()
 
     # ─────────────────────────────────────────
-    # SCORE BASE
+    # SCORES
     # ─────────────────────────────────────────
-    df["score"] = df[q_cols].mean(axis=1)
+    df["Score_Global"] = df[q_cols].mean(axis=1)
 
-    conc = df.groupby(concesion_col)["score"].mean().sort_values(ascending=False)
+    conc = df.groupby(concesion_col)["Score_Global"].mean().sort_values(ascending=False)
 
-    global_score = df["score"].mean()
+    global_score = df["Score_Global"].mean()
     best = conc.idxmax()
     worst = conc.idxmin()
 
-    spread = conc.max() - conc.min()
-
     # ─────────────────────────────────────────
-    # CAPA 1: ESTADO DEL SISTEMA (REDUCIDO)
+    # CAPA 1: ESTADO GENERAL
     # ─────────────────────────────────────────
     st.subheader("🧭 Estado del Sistema")
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
 
     c1.metric("Score Global", round(global_score, 2))
     c2.metric("Mejor Concesión", best)
     c3.metric("Concesión Crítica", worst)
-
-    # DECISIÓN AUTOMÁTICA
-    if global_score >= 8:
-        status = "🟢 Sistema estable"
-    elif global_score >= 6.5:
-        status = "🟡 Sistema en riesgo"
-    else:
-        status = "🔴 Sistema crítico"
-
-    st.success(status)
+    c4.metric("Total Respuestas", len(df))
 
     st.divider()
 
     # ─────────────────────────────────────────
-    # CAPA 2: PROBLEMA REAL (AQUÍ ESTÁ EL NIVEL 3)
+    # CAPA 2: DIAGNÓSTICO (NO DESCRIPTIVO, PROBLEMÁTICO)
     # ─────────────────────────────────────────
-    st.subheader("⚠ Diagnóstico Ejecutivo (NO descriptivo)")
+    st.subheader("⚠ Diagnóstico Ejecutivo")
 
     worst_score = conc.min()
-    worst_gap = conc.max() - conc.min()
+    best_score = conc.max()
+    spread = best_score - worst_score
 
-    # detectar dimensión problemática
-    worst_col = df[q_cols].mean().idxmin()
-    best_col = df[q_cols].mean().idxmax()
+    # lógica de riesgo (IMPORTANTE)
+    if global_score >= 8:
+        health = "🟢 Sistema estable"
+    elif global_score >= 6.5:
+        health = "🟡 Sistema en tensión"
+    else:
+        health = "🔴 Sistema crítico"
 
-    st.error(f"""
-    PROBLEMA CENTRAL DETECTADO:
+    st.info(f"""
+    Estado general: {health}
 
-    • Concesión que deteriora el sistema: {worst}
-    • Dimensión crítica del sistema: {worst_col}
-    • Brecha operativa entre concesiones: {round(worst_gap,2)}
-
-    INTERPRETACIÓN:
-    El problema no es general, es localizado y estructural.
+    • Brecha entre concesiones: {round(spread,2)} puntos  
+    • Riesgo principal: desigualdad operativa entre concesiones  
+    • Concesión con peor desempeño: {worst} ({round(worst_score,2)})  
+    • Concesión dominante: {best} ({round(best_score,2)})  
     """)
 
     st.divider()
 
     # ─────────────────────────────────────────
-    # CAPA 3: ACCIÓN (OBLIGATORIA, NO OPCIONAL)
+    # CAPA 3: ACCIONES (LO MÁS IMPORTANTE)
     # ─────────────────────────────────────────
-    st.subheader("🎯 Acciones obligatorias")
+    st.subheader("🎯 Acciones Recomendadas")
 
     actions = []
 
     if worst_score < 6.5:
-        actions.append(f"🔴 Intervenir inmediatamente la concesión {worst}")
+        actions.append("🔴 Intervención inmediata en concesión crítica (operación + financiero)")
 
-    if worst_gap > 2:
-        actions.append("🟡 Estandarizar operación entre concesiones (alta variabilidad)")
+    if spread > 2:
+        actions.append("🟡 Homologar procesos entre concesiones (alta variabilidad detectada)")
 
-    if df["score"].mean() < 7.5:
-        actions.append("🟡 Revisar modelo de servicio integral TLV")
+    if global_score < 7.5:
+        actions.append("🟡 Revisión de estrategia de servicio integral")
 
-    actions.append(f"🟢 Replicar prácticas de {best} como benchmark interno")
+    actions.append("🟢 Mantener prácticas de concesión líder como benchmark interno")
 
     for a in actions:
         st.write(a)
@@ -117,9 +113,9 @@ if uploaded_file:
     st.divider()
 
     # ─────────────────────────────────────────
-    # CAPA 4: SOLO 1 GRÁFICO (NO MÁS RUIDO)
+    # VISUAL 1: RANKING EJECUTIVO
     # ─────────────────────────────────────────
-    st.subheader("🏢 Ranking de Concesiones (único gráfico)")
+    st.subheader("🏢 Ranking de Concesiones")
 
     rank_df = conc.reset_index()
     rank_df.columns = ["Concesión", "Score"]
@@ -136,10 +132,27 @@ if uploaded_file:
     st.plotly_chart(fig, use_container_width=True)
 
     # ─────────────────────────────────────────
-    # DETALLE SOLO SI LO PIDEN
+    # VISUAL 2: DISTRIBUCIÓN DE RIESGO
     # ─────────────────────────────────────────
-    with st.expander("Ver datos crudos"):
+    st.subheader("📉 Distribución de Riesgo")
+
+    df["Riesgo"] = pd.cut(
+        df["Score_Global"],
+        bins=[0, 6.5, 7.9, 10],
+        labels=["Crítico", "Medio", "Alto"]
+    )
+
+    risk_df = df["Riesgo"].value_counts().reset_index()
+    risk_df.columns = ["Nivel", "Cantidad"]
+
+    fig2 = px.pie(risk_df, names="Nivel", values="Cantidad")
+    st.plotly_chart(fig2, use_container_width=True)
+
+    # ─────────────────────────────────────────
+    # DETALLE SOLO BAJO DEMANDA
+    # ─────────────────────────────────────────
+    with st.expander("📊 Ver dataset completo"):
         st.dataframe(df)
 
 else:
-    st.info("Carga tu archivo Excel para iniciar")
+    st.warning("Sube tu archivo Excel TLV para generar el dashboard")
