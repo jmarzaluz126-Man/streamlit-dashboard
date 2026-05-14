@@ -369,14 +369,7 @@ q_stats_display["Semáforo"] = q_stats_display["Score"].apply(
 )
 
 st.dataframe(
-    q_stats_display[["Pregunta", "Score", "Semáforo"]].style.format({
-        "Score": "{:.2f}"
-    }).background_gradient(
-        subset=["Score"],
-        cmap="RdYlGn",
-        vmin=5,
-        vmax=10
-    ),
+    q_stats_display[["Pregunta", "Score", "Semáforo"]],
     use_container_width=True,
     height=600
 )
@@ -469,12 +462,7 @@ st.dataframe(
     display_df.style.format({
         "Score": "{:.2f}",
         "Desv. Est": "{:.2f}"
-    }).background_gradient(
-        subset=["Score"],
-        cmap="RdYlGn",
-        vmin=5,
-        vmax=10
-    ),
+    }),
     use_container_width=True,
     height=300
 )
