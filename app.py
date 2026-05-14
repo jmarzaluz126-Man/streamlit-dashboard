@@ -2,88 +2,91 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-st.set_page_config(page_title="Dashboard Concesiones", layout="wide")
+st.set_page_config(page_title="Dashboard TLV", layout="wide")
 
-st.title("📊 Dashboard Ejecutivo - Encuesta Concesiones")
+st.title("📊 Dashboard Ejecutivo TLV - Concesiones")
 
-# ─────────────────────────────────────────────
-# 1. CARGA DE ARCHIVO
-# ─────────────────────────────────────────────
-uploaded_file = st.file_uploader("Sube tu archivo Excel", type=["xlsx"])
+uploaded_file = st.file_uploader("Sube Excel TLV", type=["xlsx"])
 
 if uploaded_file:
 
     df = pd.read_excel(uploaded_file)
 
-    st.subheader("Vista previa de datos")
-    st.dataframe(df.head())
-
-    # ─────────────────────────────────────────────
-    # 2. LIMPIEZA BÁSICA (ajustable a tu Excel)
-    # ─────────────────────────────────────────────
-    df = df.dropna(how="all")
-
-    # Detectar columnas clave de forma flexible
-    numeric_cols = df.select_dtypes(include="number").columns.tolist()
-
-    if len(numeric_cols) == 0:
-        st.error("No se detectaron columnas numéricas para análisis.")
+    # ─────────────────────────────
+    # VALIDACIÓN DE COLUMNAS
+    # ─────────────────────────────
+    required_cols = ["Concesion"]
+    if "Concesion" not in df.columns:
+        st.error("No existe columna 'Concesion'. Revisa tu Excel.")
         st.stop()
 
-    # Score promedio general
-    df["Score_Promedio"] = df[numeric_cols].mean(axis=1)
+    # asumir preguntas = todas las columnas numéricas excepto metadata
+    exclude = ["ID", "Concesion"]
+    q_cols = [c for c in df.columns if c not in exclude and pd.api.types.is_numeric_dtype(df[c])]
 
-    # ─────────────────────────────────────────────
-    # 3. KPIs PRINCIPALES
-    # ─────────────────────────────────────────────
-    col1, col2, col3 = st.columns(3)
+    if len(q_cols) < 5:
+        st.error("No se detectaron suficientes preguntas numéricas.")
+        st.stop()
 
-    col1.metric("Score Promedio Global", round(df["Score_Promedio"].mean(), 2))
-    col2.metric("Máximo Score", round(df["Score_Promedio"].max(), 2))
-    col3.metric("Mínimo Score", round(df["Score_Promedio"].min(), 2))
+    # ─────────────────────────────
+    # SCORE
+    # ─────────────────────────────
+    df["Score_Global"] = df[q_cols].mean(axis=1)
+
+    def semaforo(x):
+        if x >= 8: return "🟢"
+        if x >= 6.5: return "🟡"
+        return "🔴"
+
+    df["Semaforo"] = df["Score_Global"].apply(semaforo)
+
+    # ─────────────────────────────
+    # KPIs
+    # ─────────────────────────────
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("Score Global", round(df["Score_Global"].mean(), 2))
+    col2.metric("Mejor Concesión", df.groupby("Concesion")["Score_Global"].mean().idxmax())
+    col3.metric("Peor Concesión", df.groupby("Concesion")["Score_Global"].mean().idxmin())
+    col4.metric("Total Respuestas", len(df))
 
     st.divider()
 
-    # ─────────────────────────────────────────────
-    # 4. FILTRO SIMPLE
-    # ─────────────────────────────────────────────
-    if "Concesion" in df.columns:
-        concesiones = df["Concesion"].dropna().unique()
-        filtro = st.multiselect("Filtrar concesiones", concesiones, default=concesiones)
-        df = df[df["Concesion"].isin(filtro)]
+    # ─────────────────────────────
+    # RANKING CONCESIONES
+    # ─────────────────────────────
+    st.subheader("🏢 Ranking de Concesiones")
 
-    # ─────────────────────────────────────────────
-    # 5. GRÁFICO 1: DISTRIBUCIÓN
-    # ─────────────────────────────────────────────
-    st.subheader("📈 Distribución de Scores")
+    rank = df.groupby("Concesion")["Score_Global"].mean().reset_index()
+    rank = rank.sort_values("Score_Global", ascending=False)
 
-    fig1 = px.histogram(df, x="Score_Promedio", nbins=20)
-    st.plotly_chart(fig1, use_container_width=True)
+    fig = px.bar(
+        rank,
+        x="Concesion",
+        y="Score_Global",
+        text_auto=True,
+        color="Score_Global"
+    )
 
-    # ─────────────────────────────────────────────
-    # 6. GRÁFICO 2: POR CONCESIÓN
-    # ─────────────────────────────────────────────
-    if "Concesion" in df.columns:
-        st.subheader("🏢 Score por Concesión")
+    st.plotly_chart(fig, use_container_width=True)
 
-        df_group = df.groupby("Concesion")["Score_Promedio"].mean().reset_index()
+    # ─────────────────────────────
+    # HEATMAP SIMPLE
+    # ─────────────────────────────
+    st.subheader("🔥 Promedio por pregunta")
 
-        fig2 = px.bar(
-            df_group,
-            x="Concesion",
-            y="Score_Promedio",
-            color="Score_Promedio",
-            text_auto=True
-        )
+    q_mean = df[q_cols].mean().reset_index()
+    q_mean.columns = ["Pregunta", "Score"]
 
-        st.plotly_chart(fig2, use_container_width=True)
+    fig2 = px.bar(q_mean, x="Pregunta", y="Score", color="Score")
+    st.plotly_chart(fig2, use_container_width=True)
 
-    # ─────────────────────────────────────────────
-    # 7. TABLA FINAL
-    # ─────────────────────────────────────────────
-    st.subheader("📋 Datos procesados")
+    # ─────────────────────────────
+    # TABLA
+    # ─────────────────────────────
+    st.subheader("📋 Datos")
 
     st.dataframe(df)
 
 else:
-    st.info("Sube un archivo Excel para comenzar el análisis.")
+    st.info("Sube tu archivo TLV para iniciar")
