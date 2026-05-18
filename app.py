@@ -487,7 +487,211 @@ with st.expander("📖 Ver todos los datos detallados"):
         height=600
     )
 
+# # ─────────────────────────────────────────────────────────────────────────────
+# EXPORTAR A PDF
 # ─────────────────────────────────────────────────────────────────────────────
+
+def generate_pdf_report(df, concesion_col, q_cols, q_stats):
+    """Genera un reporte PDF profesional"""
+    
+    buffer = BytesIO()
+    pdf = PdfPages(buffer, metadata=dict(Author='TeleVía Dashboard', Title='Reporte de Satisfacción'))
+    
+    # PAGE 1: Portada y KPIs
+    fig = plt.figure(figsize=(8.5, 11))
+    fig.patch.set_facecolor('#f8fafc')
+    ax = fig.add_subplot(111)
+    ax.axis('off')
+    
+    # Header
+    header = fig.add_axes([0, 0.85, 1, 0.15])
+    header.patch.set_facecolor('#1b2a4a')
+    header.axis('off')
+    
+    header.text(0.5, 0.7, '📊 TeleVía Dashboard Ejecutivo', 
+               ha='center', va='center', fontsize=28, fontweight='bold', color='white')
+    header.text(0.5, 0.2, 'Encuesta de Satisfacción · Servicio Integral', 
+               ha='center', va='center', fontsize=12, color='#cbd5e1')
+    
+    # KPIs
+    global_score = round(df['Score_Promedio'].mean(), 2)
+    best_conc = df.groupby(concesion_col)['Score_Promedio'].mean().idxmax()
+    best_score = round(df.groupby(concesion_col)['Score_Promedio'].mean().max(), 2)
+    worst_conc = df.groupby(concesion_col)['Score_Promedio'].mean().idxmin()
+    worst_score = round(df.groupby(concesion_col)['Score_Promedio'].mean().min(), 2)
+    
+    y_pos = 0.70
+    
+    ax.text(0.5, y_pos, 'Score Global Promedio', ha='center', fontsize=14, fontweight='bold')
+    ax.text(0.5, y_pos-0.05, f'{global_score}/10', ha='center', fontsize=32, fontweight='bold', color='#0d9488')
+    
+    y_pos -= 0.15
+    
+    ax.text(0.25, y_pos, 'Mejor Concesión', ha='center', fontsize=12, fontweight='bold')
+    ax.text(0.25, y_pos-0.05, best_conc, ha='center', fontsize=14, fontweight='bold')
+    ax.text(0.25, y_pos-0.1, f'{best_score}/10', ha='center', fontsize=12, color='#16a34a')
+    
+    ax.text(0.75, y_pos, 'Concesión en Riesgo', ha='center', fontsize=12, fontweight='bold')
+    ax.text(0.75, y_pos-0.05, worst_conc, ha='center', fontsize=14, fontweight='bold')
+    ax.text(0.75, y_pos-0.1, f'{worst_score}/10', ha='center', fontsize=12, color='#dc2626')
+    
+    y_pos -= 0.20
+    
+    ax.text(0.5, y_pos, f'Total Respondentes: {len(df)} | Concesiones: {df[concesion_col].nunique()}',
+           ha='center', fontsize=11, color='#64748b')
+    
+    ax.text(0.5, y_pos-0.05, f'Generado: {datetime.now().strftime("%d/%m/%Y %H:%M")}',
+           ha='center', fontsize=10, color='#94a3b8', style='italic')
+    
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    
+    pdf.savefig(fig, bbox_inches='tight')
+    plt.close(fig)
+    
+    # PAGE 2: Ranking de Concesiones
+    fig, ax = plt.subplots(figsize=(8.5, 11))
+    fig.patch.set_facecolor('white')
+    fig.suptitle('Ranking de Concesiones', fontsize=18, fontweight='bold', y=0.98)
+    
+    conc_scores = df.groupby(concesion_col)['Score_Promedio'].mean().sort_values(ascending=True)
+    colors = ['#16a34a' if x >= 8 else ('#d97706' if x >= 6.5 else '#dc2626') for x in conc_scores.values]
+    
+    bars = ax.barh(range(len(conc_scores)), conc_scores.values, color=colors, edgecolor='white', linewidth=2)
+    
+    ax.set_yticks(range(len(conc_scores)))
+    ax.set_yticklabels(conc_scores.index, fontsize=10)
+    ax.set_xlabel('Score (1–10)', fontsize=11, fontweight='bold')
+    ax.set_xlim(0, 10)
+    
+    for i, (bar, val) in enumerate(zip(bars, conc_scores.values)):
+        ax.text(val + 0.2, i, f'{val:.2f}', va='center', fontweight='bold', fontsize=10)
+    
+    ax.grid(axis='x', alpha=0.3, linestyle='--')
+    ax.set_axisbelow(True)
+    
+    plt.tight_layout()
+    pdf.savefig(fig, bbox_inches='tight')
+    plt.close(fig)
+    
+    # PAGE 3: Todas las Dimensiones
+    fig, ax = plt.subplots(figsize=(8.5, 11))
+    fig.patch.set_facecolor('white')
+    fig.suptitle('Desempeño de Todas las Dimensiones', fontsize=18, fontweight='bold', y=0.98)
+    
+    scores_sorted = q_stats.sort_values('Score', ascending=True)
+    colors = ['#16a34a' if x >= 8 else ('#d97706' if x >= 6.5 else '#dc2626') for x in scores_sorted['Score'].values]
+    
+    bars = ax.barh(range(len(scores_sorted)), scores_sorted['Score'].values, color=colors, edgecolor='white', linewidth=1.5)
+    
+    ax.set_yticks(range(len(scores_sorted)))
+    ax.set_yticklabels(scores_sorted['Pregunta'], fontsize=9)
+    ax.set_xlabel('Score (1–10)', fontsize=11, fontweight='bold')
+    ax.set_xlim(0, 10)
+    
+    for i, (bar, val) in enumerate(zip(bars, scores_sorted['Score'].values)):
+        ax.text(val + 0.2, i, f'{val:.2f}', va='center', fontsize=9)
+    
+    ax.grid(axis='x', alpha=0.3, linestyle='--')
+    ax.set_axisbelow(True)
+    
+    plt.tight_layout()
+    pdf.savefig(fig, bbox_inches='tight')
+    plt.close(fig)
+    
+    # PAGE 4: Resumen Ejecutivo
+    fig = plt.figure(figsize=(8.5, 11))
+    fig.patch.set_facecolor('#f8fafc')
+    
+    ax = fig.add_subplot(111)
+    ax.axis('off')
+    
+    ax.text(0.5, 0.95, 'Resumen Ejecutivo', ha='center', fontsize=16, fontweight='bold')
+    
+    y = 0.88
+    
+    ax.text(0.05, y, 'Indicadores Principales:', fontsize=12, fontweight='bold')
+    y -= 0.06
+    
+    best_q = q_stats.iloc[0]
+    worst_q = q_stats.iloc[-1]
+    
+    ax.text(0.05, y, f'• Score Global: {global_score}/10', fontsize=10)
+    y -= 0.04
+    
+    ax.text(0.05, y, f'• Mejor dimensión: {best_q["Pregunta"]} ({best_q["Score"]:.2f}/10)', fontsize=10)
+    y -= 0.04
+    
+    ax.text(0.05, y, f'• Dimensión crítica: {worst_q["Pregunta"]} ({worst_q["Score"]:.2f}/10)', fontsize=10)
+    y -= 0.04
+    
+    ax.text(0.05, y, f'• Top performer: {best_conc} ({best_score:.2f}/10)', fontsize=10)
+    y -= 0.04
+    
+    ax.text(0.05, y, f'• En riesgo: {worst_conc} ({worst_score:.2f}/10)', fontsize=10)
+    y -= 0.08
+    
+    ax.text(0.05, y, 'Recomendaciones:', fontsize=12, fontweight='bold')
+    y -= 0.06
+    
+    recommendations = [
+        f"1. Plan de mejora para {worst_q['Pregunta'].lower()}",
+        f"2. Replicar prácticas de {best_conc} en otras concesiones",
+        f"3. Intervención urgente en {worst_conc}",
+        "4. Monitoreo trimestral continuo",
+        "5. Enfoque en satisfacción general"
+    ]
+    
+    for rec in recommendations:
+        ax.text(0.05, y, rec, fontsize=9)
+        y -= 0.05
+    
+    y -= 0.03
+    
+    ax.text(0.05, y, 'Metodología:', fontsize=11, fontweight='bold')
+    y -= 0.04
+    
+    ax.text(0.05, y, '• Escala: 1–10 | Verde ≥8.0 | Amarillo 6.5–7.9 | Rojo <6.5', fontsize=8, color='#64748b')
+    y -= 0.03
+    ax.text(0.05, y, f'• Respondentes: {len(df)} | Concesiones: {df[concesion_col].nunique()}', fontsize=8, color='#64748b')
+    y -= 0.03
+    ax.text(0.05, y, f'• {datetime.now().strftime("%d/%m/%Y %H:%M")}', fontsize=8, color='#64748b')
+    
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    
+    plt.tight_layout()
+    pdf.savefig(fig, bbox_inches='tight')
+    plt.close(fig)
+    
+    pdf.close()
+    buffer.seek(0)
+    
+    return buffer
+
+st.divider()
+
+st.markdown("### 📥 Exportar a PDF")
+
+col_pdf1, col_pdf2 = st.columns([3, 1])
+
+with col_pdf1:
+    st.write("Genera un reporte profesional en PDF listo para presentar a directivos")
+
+with col_pdf2:
+    if st.button("📄 Descargar PDF", use_container_width=True, key="pdf_button"):
+        with st.spinner("Generando PDF..."):
+            pdf_buffer = generate_pdf_report(df, concesion_col, q_cols, q_stats)
+            
+            st.download_button(
+                label="✅ PDF Listo para Descargar",
+                data=pdf_buffer,
+                file_name=f"Dashboard_TeleVia_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+
+st.divider()─────────────────────────────────────────────────────────────────────────────
 # FOOTER
 # ─────────────────────────────────────────────────────────────────────────────
 st.divider()
