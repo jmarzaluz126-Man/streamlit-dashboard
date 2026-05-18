@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import numpy as np
 from datetime import datetime
 from io import BytesIO
+import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -489,7 +490,7 @@ with st.expander("📖 Ver todos los datos detallados"):
         height=600
     )
 
-# # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
 # EXPORTAR A PDF
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -693,9 +694,6 @@ with col_pdf2:
                 use_container_width=True
             )
 
-st.divider()─────────────────────────────────────────────────────────────────────────────
-# FOOTER
-# ─────────────────────────────────────────────────────────────────────────────
 st.divider()
 
 st.markdown("""
