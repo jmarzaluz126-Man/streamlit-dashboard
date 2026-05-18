@@ -4,6 +4,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 from datetime import datetime
+from io import BytesIO
+from matplotlib.backends.backend_pdf import PdfPages
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIG & THEMING
