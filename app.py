@@ -16,20 +16,18 @@ st.set_page_config(
 )
 
 # ============================================================
-# CARGA DE DATOS - VERSIÓN DEFINITIVA (POR POSICIONES)
+# CARGA DE DATOS
 # ============================================================
 @st.cache_data
 def load_data():
     # ---------- LECTURA DE Q1 ----------
-    # Q1: la cabecera está en la fila 1 (índice 1), pero usaremos header=None y saltaremos
-    # para obtener solo los datos.
     df_q1 = pd.read_excel(
         'Encuesta concesiones TLV Q1 y Q2.xlsx',
         sheet_name='Calificaciones Q1',
         header=None,
-        skiprows=2  # Saltamos fila 0 (vacía) y fila 1 (cabecera)
+        skiprows=2
     )
-    # Q2: cabecera en fila 0, saltamos 1 fila
+    # Q2
     df_q2 = pd.read_excel(
         'Encuesta concesiones TLV Q1 y Q2.xlsx',
         sheet_name='Calificaciones Q2',
@@ -38,25 +36,15 @@ def load_data():
     )
 
     # ---------- ELIMINAR FILAS DE SUBTOTAL Y VACÍAS ----------
-    # Q1: primera columna (índice 0) contiene ID o está vacía
     df_q1 = df_q1.dropna(subset=[0])
     df_q1 = df_q1[~df_q1[0].astype(str).str.contains('SUBTOTAL', case=False, na=False)]
     df_q1 = df_q1[df_q1[0].astype(str).str.strip() != '']
 
-    # Q2: primera columna (índice 0) contiene Nombre
     df_q2 = df_q2.dropna(subset=[0])
     df_q2 = df_q2[~df_q2[0].astype(str).str.contains('SUBTOTAL', case=False, na=False)]
     df_q2 = df_q2[df_q2[0].astype(str).str.strip() != '']
 
     # ---------- DEFINIR NOMBRES DE COLUMNAS ----------
-    # Q1 tiene 26 columnas (A-Z). Índices:
-    # 0:ID, 1:Hora de inicio, 2:Hora de finalización, 3:Correo, 4:Nombre,
-    # 5:Nombre de la Concesión, 6:Área/Cargo,
-    # 7-21: 15 preguntas,
-    # 22:Total Promedio General (no lo usamos),
-    # 23-25: texto (correctamente, incorrectamente, comentarios)
-    q1_cols = ['ID', 'Hora de inicio', 'Hora de finalización', 'Correo electrónico',
-               'Nombre', 'Nombre de la Concesión', 'Área / Cargo']
     preguntas_cortas = [
         'P1_Eficiencia_Operativa',
         'P2_Tiempos_Respuesta',
@@ -74,34 +62,24 @@ def load_data():
         'P14_Comunicacion_Proactiva',
         'P15_Satisfaccion_Integral'
     ]
+    
     q1_text_cols = ['Aciertos', 'Áreas_mejora', 'Comentarios_contacto']
 
-    # Q2 tiene 23 columnas (A-W). Índices:
-    # 0:Nombre, 1:Nombre de la Concesión, 2:Área/Cargo,
-    # 3-17: 15 preguntas,
-    # 18: NPS,
-    # 19:Total Promedio General (no lo usamos),
-    # 20-22: texto (correctamente, incorrectamente, comentarios)
-    q2_cols = ['Nombre', 'Nombre de la Concesión', 'Área / Cargo']
-    # Las preguntas son las mismas
-
-    # ---------- CONSTRUIR DATAFRAMES CON NOMBRES ----------
-    # Q1: separar por índices
+    # ---------- CONSTRUIR Q1 ----------
     q1_fijas = df_q1.iloc[:, 0:7].copy()
-    q1_fijas.columns = q1_cols
+    q1_fijas.columns = ['ID', 'Hora de inicio', 'Hora de finalización', 'Correo electrónico',
+                        'Nombre', 'Nombre de la Concesión', 'Área / Cargo']
     q1_preg = df_q1.iloc[:, 7:22].copy()
     q1_preg.columns = preguntas_cortas
     q1_text = df_q1.iloc[:, 23:26].copy()
     q1_text.columns = q1_text_cols
 
-    # Q2: separar por índices
+    # ---------- CONSTRUIR Q2 ----------
     q2_fijas = df_q2.iloc[:, 0:3].copy()
-    q2_fijas.columns = q2_cols
+    q2_fijas.columns = ['Nombre', 'Nombre de la Concesión', 'Área / Cargo']
     q2_preg = df_q2.iloc[:, 3:18].copy()
     q2_preg.columns = preguntas_cortas
-    # NPS está en la columna 18
     q2_nps = df_q2.iloc[:, 18].copy().rename('NPS')
-    # Texto en columnas 20-22
     q2_text = df_q2.iloc[:, 20:23].copy()
     q2_text.columns = q1_text_cols
 
@@ -110,7 +88,6 @@ def load_data():
                             q1_preg.reset_index(drop=True),
                             q1_text.reset_index(drop=True)], axis=1)
     df_q1_full['CU'] = 'Q1'
-    # Añadir NPS vacío (Q1 no tiene)
     df_q1_full['NPS'] = np.nan
 
     # ---------- UNIR Q2 ----------
@@ -120,12 +97,12 @@ def load_data():
                             q2_text.reset_index(drop=True)], axis=1)
     df_q2_full['CU'] = 'Q2'
 
-    # Asegurar que Q2 tenga las mismas columnas que Q1 (ID, Hora, Correo)
+    # Asegurar que Q2 tenga las mismas columnas que Q1
     for col in ['ID', 'Hora de inicio', 'Hora de finalización', 'Correo electrónico']:
         if col not in df_q2_full.columns:
             df_q2_full[col] = np.nan
 
-    # Reordenar columnas para que coincidan
+    # Reordenar columnas
     orden_columnas = ['ID', 'Hora de inicio', 'Hora de finalización',
                       'Correo electrónico', 'Nombre', 'Nombre de la Concesión',
                       'Área / Cargo'] + preguntas_cortas + ['NPS'] + ['Aciertos', 'Áreas_mejora', 'Comentarios_contacto'] + ['CU']
@@ -143,8 +120,7 @@ def load_data():
     # Calcular promedio general
     df['Total_Promedio'] = df[preguntas_cortas].mean(axis=1)
 
-    # ---------- CORRECCIONES ADICIONALES ----------
-    # En Q2, algunos nombres pueden tener caracteres especiales, los limpiamos
+    # Limpiar nombres
     df['Nombre'] = df['Nombre'].astype(str).str.strip()
     df['Nombre de la Concesión'] = df['Nombre de la Concesión'].astype(str).str.strip()
 
@@ -154,7 +130,7 @@ def load_data():
 df, preguntas = load_data()
 
 # ============================================================
-# SIDEBAR - FILTROS
+# SIDEBAR
 # ============================================================
 st.sidebar.image("https://www.aleatica.com/wp-content/uploads/2024/01/logo-aleatica.png", width=200)
 st.sidebar.title("🔍 Filtros")
@@ -178,14 +154,13 @@ df_filtrado = df[df['CU'].isin(cu_selected)]
 df_filtrado = df_filtrado[df_filtrado['Nombre de la Concesión'].isin(concesiones)]
 
 # ============================================================
-# CSS para modo oscuro
+# CSS
 # ============================================================
 if modo_oscuro:
     st.markdown("""
         <style>
         .stApp { background-color: #1e1e1e; color: white; }
         .stMetric { background-color: #2d2d2d; padding: 10px; border-radius: 10px; }
-        .css-1d391kg { background-color: #2d2d2d; }
         </style>
     """, unsafe_allow_html=True)
 else:
@@ -214,7 +189,7 @@ st.markdown(f"**Registros analizados:** {len(df_filtrado):,} | **Trimestres:** {
 st.divider()
 
 # ============================================================
-# 1. RESUMEN EJECUTIVO (KPIs)
+# 1. RESUMEN EJECUTIVO
 # ============================================================
 st.header("📈 Resumen Ejecutivo")
 
@@ -258,7 +233,7 @@ with col4:
 st.divider()
 
 # ============================================================
-# CONFIGURACIÓN DE GRÁFICOS (para exportar PNG)
+# CONFIGURACIÓN DE GRÁFICOS
 # ============================================================
 plot_config = {
     'displayModeBar': True,
@@ -271,11 +246,11 @@ plot_config = {
 }
 
 # ============================================================
-# 2. TABLA DE RESULTADOS GENERALES (COMO EN EL INFORME)
+# 2. TABLA DE RESULTADOS GENERALES
 # ============================================================
 st.header("📊 Resultados Generales (Promedios)")
 
-# Crear tabla comparativa Q1 vs Q2
+# Definir las dimensiones clave del informe (10 dimensiones)
 dimensiones = {
     'Eficiencia operativa (gestión de cruces)': 'P1_Eficiencia_Operativa',
     'Tiempos de respuesta a incidencias': 'P2_Tiempos_Respuesta',
@@ -298,14 +273,12 @@ for nombre, clave in dimensiones.items():
     if np.isnan(q2_prom):
         q2_prom = np.nan
     variacion = q2_prom - q1_prom if (not np.isnan(q1_prom) and not np.isnan(q2_prom)) else np.nan
-    # Determinar estatus
+    # Estatus: si la variación es negativa -> "🔴 Requiere mejora", si es positiva -> "✅ Mejora", si es 0 -> "⚖️ Estable"
     if not np.isnan(variacion):
-        if variacion >= 0.3:
-            status = "✅ Mejora"
+        if variacion < 0:
+            status = "🔴 Requiere mejora"
         elif variacion > 0:
-            status = "⚠️ Estable bajo"
-        elif variacion < -0.3:
-            status = "🔴 Retroceso"
+            status = "✅ Mejora"
         else:
             status = "⚖️ Estable"
     else:
@@ -318,20 +291,43 @@ for nombre, clave in dimensiones.items():
         'Estatus': status
     })
 
+# Añadir fila de promedio general
+prom_q1 = df_filtrado[df_filtrado['CU']=='Q1']['Total_Promedio'].mean()
+prom_q2 = df_filtrado[df_filtrado['CU']=='Q2']['Total_Promedio'].mean()
+variacion_gral = prom_q2 - prom_q1 if (not np.isnan(prom_q1) and not np.isnan(prom_q2)) else np.nan
+if not np.isnan(variacion_gral):
+    if variacion_gral < 0:
+        status_gral = "🔴 Requiere mejora"
+    elif variacion_gral > 0:
+        status_gral = "✅ Mejora"
+    else:
+        status_gral = "⚖️ Estable"
+else:
+    status_gral = "N/A"
+
+tabla.append({
+    'Dimensión': '**Promedio General**',
+    'Q1': f"{prom_q1:.2f}" if not np.isnan(prom_q1) else "N/A",
+    'Q2': f"{prom_q2:.2f}" if not np.isnan(prom_q2) else "N/A",
+    'Variación': f"{variacion_gral:+.2f}" if not np.isnan(variacion_gral) else "N/A",
+    'Estatus': status_gral
+})
+
 df_tabla = pd.DataFrame(tabla)
 st.dataframe(df_tabla, use_container_width=True, hide_index=True)
 
 st.divider()
 
 # ============================================================
-# 3. GRÁFICO DE BARRAS COMPARATIVO
+# 3. GRÁFICO DE BARRAS COMPARATIVO (HORIZONTAL)
 # ============================================================
 st.subheader("🔹 Comparativa por dimensión")
 
 # Preparar datos para gráfico
 df_means = df_filtrado.groupby('CU')[preguntas].mean().reset_index()
 df_means_melt = df_means.melt(id_vars='CU', var_name='Pregunta', value_name='Promedio')
-# Mapear nombres largos
+
+# Mapear nombres
 etiquetas = {
     'P1_Eficiencia_Operativa': 'Eficiencia operativa',
     'P2_Tiempos_Respuesta': 'Tiempos de respuesta',
@@ -349,31 +345,47 @@ etiquetas = {
     'P14_Comunicacion_Proactiva': 'Comunicación proactiva',
     'P15_Satisfaccion_Integral': 'Satisfacción integral'
 }
+
 df_means_melt['Pregunta'] = df_means_melt['Pregunta'].map(etiquetas)
-# Ordenar las preguntas en el mismo orden que la tabla
 orden_preguntas = list(etiquetas.values())
 df_means_melt['Pregunta'] = pd.Categorical(df_means_melt['Pregunta'], categories=orden_preguntas, ordered=True)
 
-fig = px.bar(df_means_melt,
-             x='Pregunta',
-             y='Promedio',
-             color='CU',
-             barmode='group',
-             color_discrete_map={'Q1': '#1f77b4', 'Q2': '#ff7f0e'},
-             text_auto='.2f',
-             title='Promedio por dimensión - Q1 vs Q2',
-             template=template)
-fig.update_layout(yaxis_range=[0, 5.5], height=500, legend_title='Trimestre')
-fig.update_xaxes(tickangle=45)
-st.plotly_chart(fig, use_container_width=True, config=plot_config)
+# Gráfico de barras horizontales
+if len(cu_selected) > 1:
+    fig = px.bar(df_means_melt,
+                 y='Pregunta',
+                 x='Promedio',
+                 color='CU',
+                 barmode='group',
+                 color_discrete_map={'Q1': '#1f77b4', 'Q2': '#ff7f0e'},
+                 text_auto='.2f',
+                 title='Promedio por dimensión - Q1 vs Q2',
+                 template=template,
+                 orientation='h')
+    fig.update_layout(xaxis_range=[0, 5.5], height=600, legend_title='Trimestre')
+    st.plotly_chart(fig, use_container_width=True, config=plot_config)
+else:
+    df_means_single = df_filtrado[preguntas].mean().reset_index()
+    df_means_single.columns = ['Pregunta', 'Promedio']
+    df_means_single['Pregunta'] = df_means_single['Pregunta'].map(etiquetas)
+    df_means_single['Pregunta'] = pd.Categorical(df_means_single['Pregunta'], categories=orden_preguntas, ordered=True)
+    fig = px.bar(df_means_single,
+                 y='Pregunta',
+                 x='Promedio',
+                 text_auto='.2f',
+                 title=f'Promedio por dimensión - {cu_selected[0]}',
+                 template=template,
+                 orientation='h')
+    fig.update_layout(xaxis_range=[0, 5.5], height=600, showlegend=False)
+    st.plotly_chart(fig, use_container_width=True, config=plot_config)
 
 # ============================================================
-# 4. RADAR CHART
+# 4. RADAR CHART (SOLO DIMENSIONES CLAVE)
 # ============================================================
 if len(cu_selected) > 1:
     st.subheader("🔸 Radar Comparativo")
-    fig_radar = go.Figure()
-    # Usar solo las dimensiones del informe (las que tienen sentido en radar)
+    
+    # Dimensiones clave para el radar (las mismas que en la tabla)
     radar_pregs = [
         'P1_Eficiencia_Operativa',
         'P2_Tiempos_Respuesta',
@@ -386,7 +398,12 @@ if len(cu_selected) > 1:
         'P10_Acompanamiento_Comercial',
         'P15_Satisfaccion_Integral'
     ]
-    radar_etiquetas = [etiquetas[p] for p in radar_pregs]
+    radar_etiquetas = ['Eficiencia operativa', 'Tiempos respuesta', 'Precisión conciliaciones',
+                       'Gestión incobrables', 'Monitoreo 24/7', 'Comunicación eventos',
+                       'Comunicación proactiva', 'Dispersión pagos', 'Acompañamiento comercial',
+                       'Satisfacción general']
+    
+    fig_radar = go.Figure()
     for cu in ['Q1', 'Q2']:
         valores = df_filtrado[df_filtrado['CU']==cu][radar_pregs].mean().values.tolist()
         valores.append(valores[0])  # cerrar el radar
@@ -396,10 +413,19 @@ if len(cu_selected) > 1:
             theta=etiquetas_radar,
             name=cu,
             fill='toself',
-            line_color='#1f77b4' if cu=='Q1' else '#ff7f0e'
+            line_color='#1f77b4' if cu=='Q1' else '#ff7f0e',
+            opacity=0.6
         ))
+    
     fig_radar.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 5.5])),
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 5.5],
+                tickvals=[0, 1, 2, 3, 4, 5],
+                ticktext=['0', '1', '2', '3', '4', '5']
+            )
+        ),
         height=600,
         showlegend=True,
         template=template
@@ -409,7 +435,7 @@ if len(cu_selected) > 1:
 st.divider()
 
 # ============================================================
-# 5. NPS (solo Q2)
+# 5. NPS
 # ============================================================
 if 'Q2' in cu_selected:
     st.header("⭐ NPS - Q2")
@@ -453,20 +479,22 @@ st.header("📋 Comparativa por Concesión (Q1 vs Q2)")
 
 # Calcular promedios por concesión y trimestre
 df_conc = df_filtrado.groupby(['CU', 'Nombre de la Concesión'])['Total_Promedio'].mean().reset_index()
-# Pivotar para tener Q1 y Q2 en columnas
+# Pivotar
 df_conc_pivot = df_conc.pivot(index='Nombre de la Concesión', columns='CU', values='Total_Promedio').reset_index()
 # Calcular variación
 if 'Q1' in df_conc_pivot.columns and 'Q2' in df_conc_pivot.columns:
     df_conc_pivot['Variación'] = df_conc_pivot['Q2'] - df_conc_pivot['Q1']
 else:
     df_conc_pivot['Variación'] = np.nan
+
 # Renombrar
 df_conc_pivot.columns = ['Concesión', 'Q1', 'Q2', 'Variación']
-# Mostrar tabla
+
+# Aplicar estilo y mostrar
 st.dataframe(df_conc_pivot.style.format({'Q1': '{:.2f}', 'Q2': '{:.2f}', 'Variación': '{:+.2f}'}),
              use_container_width=True, hide_index=True)
 
-# Gráfico de barras por concesión
+# Gráfico de barras
 if len(cu_selected) > 1:
     fig_conc = px.bar(df_conc, x='Nombre de la Concesión', y='Total_Promedio',
                       color='CU', barmode='group',
@@ -479,7 +507,7 @@ if len(cu_selected) > 1:
 st.divider()
 
 # ============================================================
-# 7. ANÁLISIS DE TEXTO (Comentarios)
+# 7. ANÁLISIS DE COMENTARIOS
 # ============================================================
 text_cols = ['Aciertos', 'Áreas_mejora', 'Comentarios_contacto']
 text_cols_existentes = [col for col in text_cols if col in df_filtrado.columns]
@@ -545,7 +573,7 @@ else:
 st.divider()
 
 # ============================================================
-# 8. DATOS CRUDOS Y DESCARGA
+# 8. DATOS CRUDOS
 # ============================================================
 st.header("📋 Datos crudos")
 st.dataframe(df_filtrado, use_container_width=True)
