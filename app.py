@@ -16,48 +16,38 @@ st.set_page_config(
 )
 
 # ============================================================
-# CARGA DE DATOS (CACHE) - VERSIÓN ROBUSTA
+# CARGA DE DATOS (CACHE) - VERSIÓN POR POSICIÓN
 # ============================================================
 @st.cache_data
 def load_data():
     # ---------- LECTURA DE HOJAS ----------
-    # Q1: la cabecera está en la fila 1 (índice 1)
     df_q1 = pd.read_excel(
         'Encuesta concesiones TLV Q1 y Q2.xlsx',
         sheet_name='Calificaciones Q1',
         header=1
     )
-    # Q2: la cabecera está en la fila 0 (por defecto)
     df_q2 = pd.read_excel(
         'Encuesta concesiones TLV Q1 y Q2.xlsx',
         sheet_name='Calificaciones Q2',
         header=0
     )
 
-    # ---------- LIMPIEZA DE NOMBRES DE COLUMNAS ----------
+    # ---------- LIMPIEZA DE NOMBRES ----------
     df_q1.columns = df_q1.columns.str.strip()
     df_q2.columns = df_q2.columns.str.strip()
 
-    # ---------- RENOMBRAR PRIMERA COLUMNA PARA IDENTIFICAR FILAS ----------
-    # Forzamos que la primera columna de Q1 se llame 'ID'
-    if df_q1.columns[0] != 'ID':
-        df_q1.rename(columns={df_q1.columns[0]: 'ID'}, inplace=True)
-    # En Q2 la primera columna se llama 'Nombre'
-    if df_q2.columns[0] != 'Nombre':
-        df_q2.rename(columns={df_q2.columns[0]: 'Nombre'}, inplace=True)
-
     # ---------- ELIMINAR FILAS DE SUBTOTAL Y VACÍAS (usando iloc) ----------
-    # Q1: filtramos por la primera columna (independientemente del nombre)
-    df_q1 = df_q1.dropna(subset=[df_q1.columns[0]])  # elimina filas con NaN en primera columna
+    df_q1 = df_q1.dropna(subset=[df_q1.columns[0]])
     df_q1 = df_q1[~df_q1.iloc[:, 0].astype(str).str.contains('SUBTOTAL', case=False, na=False)]
     df_q1 = df_q1[df_q1.iloc[:, 0].astype(str).str.strip() != '']
 
-    # Q2: filtramos por la primera columna
     df_q2 = df_q2.dropna(subset=[df_q2.columns[0]])
     df_q2 = df_q2[~df_q2.iloc[:, 0].astype(str).str.contains('SUBTOTAL', case=False, na=False)]
     df_q2 = df_q2[df_q2.iloc[:, 0].astype(str).str.strip() != '']
 
-    # ---------- RENOMBRAR PREGUNTAS CON NOMBRES CORTOS ----------
+    # ---------- RENOMBRAR COLUMNAS POR POSICIÓN ----------
+    # Q1: columnas fijas (0-6), preguntas (7-21)
+    # Q2: columnas fijas (0-2), preguntas (3-17)
     preguntas_cortas = [
         'P1_Eficiencia_Operativa',
         'P2_Tiempos_Respuesta',
@@ -76,44 +66,33 @@ def load_data():
         'P15_Satisfaccion_Integral'
     ]
 
-    # En Q1, las preguntas están en las columnas 7 a 21 (índices)
-    columnas_q1 = df_q1.columns.tolist()
-    preguntas_q1 = columnas_q1[7:22]  # 15 columnas
-    mapeo_q1 = {preguntas_q1[i]: preguntas_cortas[i] for i in range(15)}
+    # Q1: tomar columnas por posición
+    columnas_q1_fijas = df_q1.columns[0:7].tolist()  # 7 columnas fijas
+    columnas_q1_preguntas = df_q1.columns[7:22].tolist()  # 15 preguntas
+    # Renombrar preguntas en Q1
+    mapeo_q1 = {columnas_q1_preguntas[i]: preguntas_cortas[i] for i in range(15)}
     df_q1 = df_q1.rename(columns=mapeo_q1)
+    # Las columnas fijas se quedan con sus nombres originales
 
-    # En Q2, las preguntas están en las columnas 3 a 17
-    columnas_q2 = df_q2.columns.tolist()
-    preguntas_q2 = columnas_q2[3:18]  # 15 columnas
-    mapeo_q2 = {preguntas_q2[i]: preguntas_cortas[i] for i in range(15)}
+    # Q2: tomar columnas por posición
+    columnas_q2_fijas = df_q2.columns[0:3].tolist()  # 3 columnas fijas
+    columnas_q2_preguntas = df_q2.columns[3:18].tolist()  # 15 preguntas
+    mapeo_q2 = {columnas_q2_preguntas[i]: preguntas_cortas[i] for i in range(15)}
     df_q2 = df_q2.rename(columns=mapeo_q2)
 
-    # ---------- SELECCIONAR COLUMNAS FIJAS ----------
-    # Q1: ID, Hora de inicio, Hora de finalización, Correo electrónico, Nombre, Nombre de la Concesión, Área / Cargo
-    # Q2: Nombre, Nombre de la Concesión, Área / Cargo
-    columnas_fijas_q1 = ['ID', 'Hora de inicio', 'Hora de finalización', 
-                         'Correo electrónico', 'Nombre', 'Nombre de la Concesión', 
-                         'Área / Cargo']
-    columnas_fijas_q2 = ['Nombre', 'Nombre de la Concesión', 'Área / Cargo']
-
-    # Verificar que existan y si no, crearlas con NaN
-    for col in columnas_fijas_q1:
-        if col not in df_q1.columns:
-            df_q1[col] = np.nan
-    for col in columnas_fijas_q2:
-        if col not in df_q2.columns:
-            df_q2[col] = np.nan
-
-    # Tomar solo esas columnas + las preguntas
-    df_q1 = df_q1[columnas_fijas_q1 + preguntas_cortas]
-    df_q2 = df_q2[columnas_fijas_q2 + preguntas_cortas]
+    # ---------- SELECCIONAR COLUMNAS FIJAS Y PREGUNTAS ----------
+    # Q1: mantener fijas + preguntas renombradas
+    df_q1 = df_q1[columnas_q1_fijas + preguntas_cortas]
+    # Q2: mantener fijas + preguntas renombradas
+    df_q2 = df_q2[columnas_q2_fijas + preguntas_cortas]
 
     # ---------- AÑADIR COLUMNA DE TRIMESTRE ----------
     df_q1['CU'] = 'Q1'
     df_q2['CU'] = 'Q2'
 
     # ---------- UNIFICAR AMBOS DATAFRAMES ----------
-    # Añadir a Q2 las columnas que tiene Q1 (con NaN)
+    # Q2 no tiene ID, Hora de inicio, Hora de finalización, Correo electrónico
+    # Las añadimos con NaN
     for col in ['ID', 'Hora de inicio', 'Hora de finalización', 'Correo electrónico']:
         if col not in df_q2.columns:
             df_q2[col] = np.nan
@@ -122,6 +101,13 @@ def load_data():
     orden_columnas = ['ID', 'Hora de inicio', 'Hora de finalización', 
                       'Correo electrónico', 'Nombre', 'Nombre de la Concesión', 
                       'Área / Cargo'] + preguntas_cortas + ['CU']
+    # Asegurar que las columnas existan en ambos DataFrames
+    for col in orden_columnas:
+        if col not in df_q1.columns:
+            df_q1[col] = np.nan
+        if col not in df_q2.columns:
+            df_q2[col] = np.nan
+
     df_q1 = df_q1[orden_columnas]
     df_q2 = df_q2[orden_columnas]
 
@@ -136,7 +122,7 @@ def load_data():
     df['Total_Promedio'] = df[preguntas_cortas].mean(axis=1)
 
     # ---------- EXTRAER NPS (SOLO Q2) ----------
-    # Leer nuevamente la hoja Q2 para obtener la columna de NPS (puede estar en la columna S o similar)
+    # Leer nuevamente la hoja Q2 para obtener la columna de NPS
     df_q2_nps = pd.read_excel(
         'Encuesta concesiones TLV Q1 y Q2.xlsx',
         sheet_name='Calificaciones Q2',
@@ -150,7 +136,6 @@ def load_data():
             break
     if nps_col is not None:
         df_q2_nps = df_q2_nps[['Nombre', nps_col]].rename(columns={nps_col: 'NPS'})
-        # Hacer merge con el df principal usando 'Nombre'
         df = df.merge(df_q2_nps, on='Nombre', how='left')
     else:
         df['NPS'] = np.nan
