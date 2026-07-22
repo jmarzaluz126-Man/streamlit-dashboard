@@ -16,19 +16,18 @@ st.set_page_config(
 )
 
 # ============================================================
-# CARGA DE DATOS (CACHE)
+# CARGA DE DATOS (CACHE) - VERSIÓN ROBUSTA
 # ============================================================
 @st.cache_data
 def load_data():
     # ---------- LECTURA DE HOJAS ----------
-    # Q1: la primera fila (fila 0) está vacía, así que usamos header=1
-    # pero luego renombramos las columnas por posición
+    # Q1: la cabecera está en la fila 1 (índice 1)
     df_q1 = pd.read_excel(
         'Encuesta concesiones TLV Q1 y Q2.xlsx',
         sheet_name='Calificaciones Q1',
-        header=1  # La fila 1 contiene los nombres (ID, Hora de inicio, ...)
+        header=1
     )
-    # Q2: la primera fila ya tiene los nombres
+    # Q2: la cabecera está en la fila 0 (por defecto)
     df_q2 = pd.read_excel(
         'Encuesta concesiones TLV Q1 y Q2.xlsx',
         sheet_name='Calificaciones Q2',
@@ -40,27 +39,25 @@ def load_data():
     df_q2.columns = df_q2.columns.str.strip()
 
     # ---------- RENOMBRAR PRIMERA COLUMNA PARA IDENTIFICAR FILAS ----------
-    # En Q1, la primera columna se llama 'ID' (pero puede tener espacios)
-    # La forzamos a 'ID'
+    # Forzamos que la primera columna de Q1 se llame 'ID'
     if df_q1.columns[0] != 'ID':
         df_q1.rename(columns={df_q1.columns[0]: 'ID'}, inplace=True)
-    # En Q2, la primera columna se llama 'Nombre'
+    # En Q2 la primera columna se llama 'Nombre'
     if df_q2.columns[0] != 'Nombre':
         df_q2.rename(columns={df_q2.columns[0]: 'Nombre'}, inplace=True)
 
-    # ---------- ELIMINAR FILAS DE SUBTOTAL Y VACÍAS ----------
-    # Q1: eliminar filas donde la columna 'ID' sea NaN o contenga 'SUBTOTAL'
-    df_q1 = df_q1.dropna(subset=['ID'])
-    df_q1 = df_q1[~df_q1['ID'].astype(str).str.contains('SUBTOTAL', case=False, na=False)]
-    df_q1 = df_q1[df_q1['ID'].astype(str).str.strip() != '']
+    # ---------- ELIMINAR FILAS DE SUBTOTAL Y VACÍAS (usando iloc) ----------
+    # Q1: filtramos por la primera columna (independientemente del nombre)
+    df_q1 = df_q1.dropna(subset=[df_q1.columns[0]])  # elimina filas con NaN en primera columna
+    df_q1 = df_q1[~df_q1.iloc[:, 0].astype(str).str.contains('SUBTOTAL', case=False, na=False)]
+    df_q1 = df_q1[df_q1.iloc[:, 0].astype(str).str.strip() != '']
 
-    # Q2: eliminar filas donde la columna 'Nombre' sea NaN o contenga 'SUBTOTAL'
-    df_q2 = df_q2.dropna(subset=['Nombre'])
-    df_q2 = df_q2[~df_q2['Nombre'].astype(str).str.contains('SUBTOTAL', case=False, na=False)]
-    df_q2 = df_q2[df_q2['Nombre'].astype(str).str.strip() != '']
+    # Q2: filtramos por la primera columna
+    df_q2 = df_q2.dropna(subset=[df_q2.columns[0]])
+    df_q2 = df_q2[~df_q2.iloc[:, 0].astype(str).str.contains('SUBTOTAL', case=False, na=False)]
+    df_q2 = df_q2[df_q2.iloc[:, 0].astype(str).str.strip() != '']
 
     # ---------- RENOMBRAR PREGUNTAS CON NOMBRES CORTOS ----------
-    # Definir nombres cortos (15 preguntas en el orden exacto)
     preguntas_cortas = [
         'P1_Eficiencia_Operativa',
         'P2_Tiempos_Respuesta',
@@ -79,13 +76,13 @@ def load_data():
         'P15_Satisfaccion_Integral'
     ]
 
-    # En Q1, las preguntas están en las columnas 7 a 21 (índices 7 a 21 inclusive)
+    # En Q1, las preguntas están en las columnas 7 a 21 (índices)
     columnas_q1 = df_q1.columns.tolist()
     preguntas_q1 = columnas_q1[7:22]  # 15 columnas
     mapeo_q1 = {preguntas_q1[i]: preguntas_cortas[i] for i in range(15)}
     df_q1 = df_q1.rename(columns=mapeo_q1)
 
-    # En Q2, las preguntas están en las columnas 3 a 17 (índices 3 a 17)
+    # En Q2, las preguntas están en las columnas 3 a 17
     columnas_q2 = df_q2.columns.tolist()
     preguntas_q2 = columnas_q2[3:18]  # 15 columnas
     mapeo_q2 = {preguntas_q2[i]: preguntas_cortas[i] for i in range(15)}
@@ -99,7 +96,7 @@ def load_data():
                          'Área / Cargo']
     columnas_fijas_q2 = ['Nombre', 'Nombre de la Concesión', 'Área / Cargo']
 
-    # Verificar que estas columnas existan en cada DataFrame (por si acaso)
+    # Verificar que existan y si no, crearlas con NaN
     for col in columnas_fijas_q1:
         if col not in df_q1.columns:
             df_q1[col] = np.nan
@@ -139,14 +136,13 @@ def load_data():
     df['Total_Promedio'] = df[preguntas_cortas].mean(axis=1)
 
     # ---------- EXTRAER NPS (SOLO Q2) ----------
-    # Leer nuevamente la hoja Q2 para obtener la columna de NPS
+    # Leer nuevamente la hoja Q2 para obtener la columna de NPS (puede estar en la columna S o similar)
     df_q2_nps = pd.read_excel(
         'Encuesta concesiones TLV Q1 y Q2.xlsx',
         sheet_name='Calificaciones Q2',
         header=0
     )
     df_q2_nps.columns = df_q2_nps.columns.str.strip()
-    # Identificar la columna que contiene "probabilidades" o "recomiende"
     nps_col = None
     for col in df_q2_nps.columns:
         if 'probabilidad' in col.lower() or 'recomiende' in col.lower():
@@ -160,9 +156,7 @@ def load_data():
         df['NPS'] = np.nan
 
     # ---------- DETECTAR COLUMNAS DE TEXTO ----------
-    # Las columnas de texto en Q1 están al final (columnas W, X, Y, Z)
-    # En Q2 están al final (columnas U, V, W)
-    # Buscamos por palabras clave
+    # Buscar por palabras clave en los nombres de columna
     for col in df.columns:
         if 'correctamente' in col.lower():
             df.rename(columns={col: 'Aciertos'}, inplace=True)
