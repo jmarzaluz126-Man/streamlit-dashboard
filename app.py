@@ -16,41 +16,40 @@ st.set_page_config(
 )
 
 # ============================================================
-# CARGA DE DATOS (CACHE) - VERSIÓN POR ÍNDICES
+# CARGA DE DATOS - VERSIÓN SIMPLIFICADA POR POSICIÓN
 # ============================================================
 @st.cache_data
 def load_data():
-    # ---------- LECTURA DE HOJAS ----------
-    # Q1: cabecera en fila 1 (índice 1), datos desde fila 2 (índice 2)
+    # Leer Q1 sin cabecera, saltando las primeras 2 filas (fila 0 vacía, fila 1 cabecera)
+    # Los datos comienzan en la fila 2 (índice 2 en pandas)
     df_q1 = pd.read_excel(
         'Encuesta concesiones TLV Q1 y Q2.xlsx',
         sheet_name='Calificaciones Q1',
-        header=1  # Toma la fila 1 como cabecera
+        header=None,
+        skiprows=2  # Salta las filas 0 y 1
     )
-    # Q2: cabecera en fila 0, datos desde fila 1
+    # Leer Q2 sin cabecera, saltando la primera fila (fila 0 cabecera)
     df_q2 = pd.read_excel(
         'Encuesta concesiones TLV Q1 y Q2.xlsx',
         sheet_name='Calificaciones Q2',
-        header=0
+        header=None,
+        skiprows=1  # Salta la fila 0 (cabecera)
     )
 
-    # ---------- LIMPIEZA DE NOMBRES (solo para referencia, no los usaremos para seleccionar) ----------
-    df_q1.columns = df_q1.columns.str.strip()
-    df_q2.columns = df_q2.columns.str.strip()
-
-    # ---------- ELIMINAR FILAS DE SUBTOTAL Y VACÍAS ----------
-    # Q1: usar primera columna (índice 0) como identificador
-    df_q1 = df_q1.dropna(subset=[df_q1.columns[0]])
+    # ---------- ELIMINAR FILAS DE SUBTOTAL ----------
+    # En ambas, la primera columna (índice 0) identifica filas de subtotal
+    # Q1: columna 0 es ID, las filas de subtotal tienen '' o 'SUBTOTAL'
     df_q1 = df_q1[~df_q1.iloc[:, 0].astype(str).str.contains('SUBTOTAL', case=False, na=False)]
     df_q1 = df_q1[df_q1.iloc[:, 0].astype(str).str.strip() != '']
+    df_q1 = df_q1.dropna(subset=[0])  # eliminar filas con NaN en primera columna
 
-    # Q2: usar primera columna (índice 0)
-    df_q2 = df_q2.dropna(subset=[df_q2.columns[0]])
+    # Q2: columna 0 es Nombre
     df_q2 = df_q2[~df_q2.iloc[:, 0].astype(str).str.contains('SUBTOTAL', case=False, na=False)]
     df_q2 = df_q2[df_q2.iloc[:, 0].astype(str).str.strip() != '']
+    df_q2 = df_q2.dropna(subset=[0])
 
-    # ---------- EXTRAER COLUMNAS POR POSICIÓN ----------
-    # Definir nombres cortos para las 15 preguntas
+    # ---------- DEFINIR NOMBRES DE COLUMNAS ----------
+    # 15 preguntas cortas
     preguntas_cortas = [
         'P1_Eficiencia_Operativa',
         'P2_Tiempos_Respuesta',
@@ -69,134 +68,86 @@ def load_data():
         'P15_Satisfaccion_Integral'
     ]
 
-    # ---------- Q1: columnas fijas (0-6) y preguntas (7-21) ----------
-    # Seleccionar las columnas por índices
-    q1_fijas = df_q1.iloc[:, 0:7]  # Columnas 0 a 6 (ID, Hora de inicio, ...)
-    q1_preguntas = df_q1.iloc[:, 7:22]  # Columnas 7 a 21 (15 preguntas)
-    # Renombrar las preguntas
-    q1_preguntas.columns = preguntas_cortas
+    # ---------- EXTRAER COLUMNAS DE Q1 ----------
+    # Q1: columnas fijas: 0(ID),1(Hora inicio),2(Hora fin),3(Correo),4(Nombre),5(Concesión),6(Área)
+    # Preguntas: 7 a 21 (15 columnas)
+    # Texto: 23 (Aciertos), 24 (Áreas_mejora), 25 (Comentarios_contacto)
+    # Nota: columna 22 es "Total Promedio General" (fórmula) - la ignoramos
+    q1_fijas = df_q1.iloc[:, 0:7]
+    q1_preg = df_q1.iloc[:, 7:22]  # 7 a 21 inclusive
+    q1_texto = df_q1.iloc[:, 23:26]  # 23,24,25
 
-    # ---------- Q2: columnas fijas (0-2) y preguntas (3-17) ----------
-    q2_fijas = df_q2.iloc[:, 0:3]  # Columnas 0 a 2 (Nombre, Concesión, Área)
-    q2_preguntas = df_q2.iloc[:, 3:18]  # Columnas 3 a 17 (15 preguntas)
-    q2_preguntas.columns = preguntas_cortas
+    # Asignar nombres a las fijas
+    q1_fijas.columns = ['ID', 'Hora_inicio', 'Hora_fin', 'Correo', 'Nombre', 'Concesion', 'Area']
+    q1_preg.columns = preguntas_cortas
+    q1_texto.columns = ['Aciertos', 'Areas_mejora', 'Comentarios_contacto']
 
-    # ---------- EXTRAER NPS DE Q2 (columna 18) ----------
-    # La columna 18 es "¿Qué probabilidades hay de que recomiende usar TeleVía?"
-    if df_q2.shape[1] > 18:
-        nps_series = df_q2.iloc[:, 18]
-        # Intentar convertir a numérico
-        nps_series = pd.to_numeric(nps_series, errors='coerce')
+    # Combinar Q1
+    df_q1_clean = pd.concat([q1_fijas, q1_preg, q1_texto], axis=1)
+
+    # ---------- EXTRAER COLUMNAS DE Q2 ----------
+    # Q2: columnas fijas: 0(Nombre),1(Concesión),2(Área)
+    # Preguntas: 3 a 17 (15 columnas)
+    # NPS: columna 18
+    # Texto: 20 (Aciertos), 21 (Areas_mejora), 22 (Comentarios_contacto)
+    # Nota: columna 19 es "Total Promedio General" (fórmula) - la ignoramos
+    q2_fijas = df_q2.iloc[:, 0:3]
+    q2_preg = df_q2.iloc[:, 3:18]  # 3 a 17
+    q2_nps = df_q2.iloc[:, 18] if df_q2.shape[1] > 18 else pd.Series([np.nan]*len(df_q2))
+    q2_texto = df_q2.iloc[:, 20:23] if df_q2.shape[1] > 20 else pd.DataFrame()
+
+    # Asignar nombres
+    q2_fijas.columns = ['Nombre', 'Concesion', 'Area']
+    q2_preg.columns = preguntas_cortas
+    if not q2_texto.empty:
+        q2_texto.columns = ['Aciertos', 'Areas_mejora', 'Comentarios_contacto']
     else:
-        nps_series = pd.Series([np.nan] * len(df_q2))
+        q2_texto = pd.DataFrame({col: [np.nan]*len(q2_fijas) for col in ['Aciertos', 'Areas_mejora', 'Comentarios_contacto']})
 
-    # ---------- CONSTRUIR DATAFRAMES LIMPIOS ----------
-    # Q1: unir fijas + preguntas
-    df_q1_clean = pd.concat([q1_fijas.reset_index(drop=True), q1_preguntas.reset_index(drop=True)], axis=1)
-    # Q2: unir fijas + preguntas + NPS
-    df_q2_clean = pd.concat([
-        q2_fijas.reset_index(drop=True),
-        q2_preguntas.reset_index(drop=True),
-        pd.DataFrame({'NPS': nps_series.values})
-    ], axis=1)
+    # Combinar Q2 (incluyendo NPS)
+    df_q2_clean = pd.concat([q2_fijas, q2_preg, pd.DataFrame({'NPS': q2_nps.values}), q2_texto], axis=1)
 
     # ---------- AÑADIR COLUMNA DE TRIMESTRE ----------
     df_q1_clean['CU'] = 'Q1'
     df_q2_clean['CU'] = 'Q2'
 
-    # ---------- ESTANDARIZAR NOMBRES DE COLUMNAS FIJAS ----------
-    # Para Q1, renombrar las primeras 7 columnas
-    q1_fijas_nombres = ['ID', 'Hora de inicio', 'Hora de finalización', 
-                        'Correo electrónico', 'Nombre', 'Nombre de la Concesión', 
-                        'Área / Cargo']
-    df_q1_clean.columns = q1_fijas_nombres + preguntas_cortas + ['CU']
-
-    # Para Q2, las primeras 3 columnas
-    q2_fijas_nombres = ['Nombre', 'Nombre de la Concesión', 'Área / Cargo']
-    # Pero Q2 también tiene NPS, así que el orden de columnas será: fijas + preguntas + NPS + CU
-    df_q2_clean.columns = q2_fijas_nombres + preguntas_cortas + ['NPS', 'CU']
-
     # ---------- UNIFICAR AMBOS DATAFRAMES ----------
-    # Asegurar que Q2 tenga las mismas columnas que Q1 (agregar ID, Hora, etc. con NaN)
-    for col in ['ID', 'Hora de inicio', 'Hora de finalización', 'Correo electrónico']:
-        df_q2_clean[col] = np.nan
+    # Q1 tiene columnas extras (ID, Hora_inicio, Hora_fin, Correo) que Q2 no tiene.
+    # Las agregamos a Q2 con NaN.
+    for col in ['ID', 'Hora_inicio', 'Hora_fin', 'Correo']:
+        if col not in df_q2_clean.columns:
+            df_q2_clean[col] = np.nan
 
-    # Reordenar columnas para que coincidan
-    orden_columnas = ['ID', 'Hora de inicio', 'Hora de finalización', 
-                      'Correo electrónico', 'Nombre', 'Nombre de la Concesión', 
-                      'Área / Cargo'] + preguntas_cortas + ['NPS', 'CU']
-    df_q1_clean = df_q1_clean[orden_columnas]
-    df_q2_clean = df_q2_clean[orden_columnas]
+    # Asegurar que ambos tengan las mismas columnas en el mismo orden
+    columnas_comunes = ['ID', 'Hora_inicio', 'Hora_fin', 'Correo', 'Nombre', 'Concesion', 'Area'] + preguntas_cortas + ['NPS', 'Aciertos', 'Areas_mejora', 'Comentarios_contacto', 'CU']
+    # Para Q1, también tiene NPS? No, pero la agregamos como NaN para que coincida
+    if 'NPS' not in df_q1_clean.columns:
+        df_q1_clean['NPS'] = np.nan
+    # Reordenar Q1 según columnas_comunes
+    df_q1_clean = df_q1_clean[columnas_comunes]
+    # Q2 también debe tener las mismas columnas en el mismo orden
+    # Asegurar que todas las columnas existen en Q2
+    for col in columnas_comunes:
+        if col not in df_q2_clean.columns:
+            df_q2_clean[col] = np.nan
+    df_q2_clean = df_q2_clean[columnas_comunes]
 
     # Concatenar
     df = pd.concat([df_q1_clean, df_q2_clean], ignore_index=True)
 
-    # ---------- CONVERTIR PREGUNTAS A NUMÉRICO ----------
+    # ---------- CONVERTIR PREGUNTAS Y NPS A NUMÉRICO ----------
     for p in preguntas_cortas:
         df[p] = pd.to_numeric(df[p], errors='coerce')
     df['NPS'] = pd.to_numeric(df['NPS'], errors='coerce')
 
-    # ---------- CALCULAR TOTAL PROMEDIO GENERAL ----------
+    # ---------- CALCULAR TOTAL PROMEDIO ----------
     df['Total_Promedio'] = df[preguntas_cortas].mean(axis=1)
 
-    # ---------- DETECTAR COLUMNAS DE TEXTO (comentarios) ----------
-    # Volver a leer las hojas para obtener las columnas de texto, ya que las descartamos
-    # Vamos a leer Q1 y Q2 completas sin cabecera para extraer las columnas de texto por posición
-    df_q1_text = pd.read_excel(
-        'Encuesta concesiones TLV Q1 y Q2.xlsx',
-        sheet_name='Calificaciones Q1',
-        header=None,  # Sin cabecera
-        skiprows=2    # Saltar las dos primeras filas (vacía y cabecera)
-    )
-    df_q2_text = pd.read_excel(
-        'Encuesta concesiones TLV Q1 y Q2.xlsx',
-        sheet_name='Calificaciones Q2',
-        header=None,
-        skiprows=1    # Saltar la cabecera
-    )
-
-    # Eliminar filas de subtotal en las versiones de texto
-    # Usamos la primera columna para identificar
-    df_q1_text = df_q1_text[~df_q1_text.iloc[:, 0].astype(str).str.contains('SUBTOTAL', case=False, na=False)]
-    df_q1_text = df_q1_text[df_q1_text.iloc[:, 0].astype(str).str.strip() != '']
-    df_q2_text = df_q2_text[~df_q2_text.iloc[:, 0].astype(str).str.contains('SUBTOTAL', case=False, na=False)]
-    df_q2_text = df_q2_text[df_q2_text.iloc[:, 0].astype(str).str.strip() != '']
-
-    # Q1: las columnas de texto son las índices 23, 24, 25 (W, X, Y) en el Excel original (0-indexado)
-    # Pero con skiprows=2, las columnas siguen siendo las mismas posiciones
-    if df_q1_text.shape[1] > 23:
-        df_q1_text_cols = df_q1_text.iloc[:, 23:26]  # columnas 23,24,25
-        # Renombrarlas
-        df_q1_text_cols.columns = ['Aciertos', 'Áreas_mejora', 'Comentarios_contacto']
-    else:
-        df_q1_text_cols = pd.DataFrame()
-
-    # Q2: las columnas de texto son las índices 20, 21, 22 (U, V, W)
-    if df_q2_text.shape[1] > 20:
-        df_q2_text_cols = df_q2_text.iloc[:, 20:23]
-        df_q2_text_cols.columns = ['Aciertos', 'Áreas_mejora', 'Comentarios_contacto']
-    else:
-        df_q2_text_cols = pd.DataFrame()
-
-    # Combinar los textos con el DataFrame principal usando el nombre (columna 4 en Q1, columna 0 en Q2)
-    # Para Q1, el nombre está en la columna 4 (índice 4)
-    if not df_q1_text_cols.empty:
-        df_q1_text_cols['Nombre'] = df_q1_text.iloc[:, 4].values
-    # Para Q2, el nombre está en la columna 0
-    if not df_q2_text_cols.empty:
-        df_q2_text_cols['Nombre'] = df_q2_text.iloc[:, 0].values
-
-    # Unir todos los textos en un solo DataFrame
-    textos_combined = pd.concat([df_q1_text_cols, df_q2_text_cols], ignore_index=True)
-
-    # Hacer merge con el df principal usando 'Nombre'
-    if not textos_combined.empty:
-        # Conservar solo las columnas de texto y Nombre
-        textos_combined = textos_combined[['Nombre', 'Aciertos', 'Áreas_mejora', 'Comentarios_contacto']]
-        df = df.merge(textos_combined, on='Nombre', how='left')
-    else:
-        for col in ['Aciertos', 'Áreas_mejora', 'Comentarios_contacto']:
-            df[col] = np.nan
+    # ---------- RENOMBRAR COLUMNAS PARA MEJOR LEGIBILIDAD (OPCIONAL) ----------
+    # Pero mantenemos los nombres actuales para que el dashboard funcione
+    # Ajustamos nombres para que coincidan con lo que espera el resto del código
+    # El código espera 'Nombre de la Concesión' y 'Área / Cargo'
+    df.rename(columns={'Concesion': 'Nombre de la Concesión', 'Area': 'Área / Cargo'}, inplace=True)
 
     return df, preguntas_cortas
 
@@ -504,7 +455,7 @@ st.divider()
 # ============================================================
 # 4. 💬 ANÁLISIS DE TEXTO LIBRE
 # ============================================================
-text_cols = ['Aciertos', 'Áreas_mejora', 'Comentarios_contacto']
+text_cols = ['Aciertos', 'Areas_mejora', 'Comentarios_contacto']
 text_cols_existentes = [col for col in text_cols if col in df_filtrado.columns]
 
 if text_cols_existentes:
