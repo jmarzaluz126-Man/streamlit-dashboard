@@ -20,37 +20,35 @@ st.set_page_config(
 # ============================================================
 @st.cache_data
 def load_data():
-    # Lee el archivo Excel con las dos hojas
+    # ---------- LECTURA DE HOJAS ----------
     df_q1 = pd.read_excel(
         'Encuesta concesiones TLV Q1 y Q2.xlsx',
         sheet_name='Calificaciones Q1',
-        header=1  # La fila 0 tiene títulos largos, la fila 1 contiene los nombres reales
+        header=1
     )
     df_q2 = pd.read_excel(
         'Encuesta concesiones TLV Q1 y Q2.xlsx',
         sheet_name='Calificaciones Q2',
-        header=0  # En Q2 la primera fila ya tiene los nombres
+        header=0
     )
 
-    # ---------- LIMPIEZA Q1 ----------
-    # Eliminar filas completamente vacías (las que tienen NaN en todas las columnas)
-    df_q1 = df_q1.dropna(how='all')
-    # Eliminar la última fila que contiene fórmulas de subtotal (detectamos por el valor en "ID")
-    df_q1 = df_q1[~df_q1['ID'].isin([None, ''])]  # ID es la primera columna
-    df_q1 = df_q1.dropna(subset=['ID'])  # Eliminar filas sin ID
+    # ---------- LIMPIEZA DE NOMBRES DE COLUMNAS ----------
+    df_q1.columns = df_q1.columns.str.strip()
+    df_q2.columns = df_q2.columns.str.strip()
 
-    # ---------- LIMPIEZA Q2 ----------
-    # En Q2 la primera columna es "Nombre", no tiene ID
-    df_q2 = df_q2.dropna(how='all')
-    # Eliminar filas que contienen fórmulas de subtotal (detectamos por la columna "Nombre")
-    df_q2 = df_q2[~df_q2['Nombre'].isin([None, ''])]
-    df_q2 = df_q2.dropna(subset=['Nombre'])
+    # ---------- ASEGURAR QUE LA PRIMERA COLUMNA SE LLAME "ID" EN Q1 ----------
+    df_q1.rename(columns={df_q1.columns[0]: 'ID'}, inplace=True)
 
-    # ---------- ESTANDARIZAR NOMBRES DE COLUMNAS ----------
-    # Las preguntas en Q1 están en columnas H a V (15 preguntas)
-    # Las preguntas en Q2 están en columnas D a R (15 preguntas)
-    # Creamos un mapeo para darles nombres cortos y consistentes
+    # ---------- ELIMINAR FILAS VACÍAS O DE SUBTOTAL ----------
+    df_q1 = df_q1.dropna(subset=['ID'])
+    df_q1 = df_q1[~df_q1['ID'].astype(str).str.contains('SUBTOTAL', case=False, na=False)]
+    df_q1 = df_q1[df_q1['ID'].astype(str).str.strip() != '']
 
+    df_q2 = df_q2.dropna(subset=[df_q2.columns[0]])
+    df_q2 = df_q2[~df_q2.iloc[:, 0].astype(str).str.contains('SUBTOTAL', case=False, na=False)]
+    df_q2 = df_q2[df_q2.iloc[:, 0].astype(str).str.strip() != '']
+
+    # ---------- ESTANDARIZAR NOMBRES DE PREGUNTAS ----------
     preguntas_cortas = [
         'P1_Eficiencia_Operativa',
         'P2_Tiempos_Respuesta',
@@ -69,113 +67,76 @@ def load_data():
         'P15_Satisfaccion_Integral'
     ]
 
-    # Mapeo para Q1 (las columnas están en el orden exacto de H a V)
     columnas_q1 = df_q1.columns.tolist()
-    # Las columnas de preguntas empiezan en la posición 7 (índice 7, letra H)
-    preguntas_q1 = columnas_q1[7:22]  # 15 columnas
+    preguntas_q1 = columnas_q1[7:22]
     mapeo_q1 = {preguntas_q1[i]: preguntas_cortas[i] for i in range(15)}
 
-    # Mapeo para Q2 (las columnas de preguntas empiezan en la posición 3, letra D)
     columnas_q2 = df_q2.columns.tolist()
-    preguntas_q2 = columnas_q2[3:18]  # 15 columnas
+    preguntas_q2 = columnas_q2[3:18]
     mapeo_q2 = {preguntas_q2[i]: preguntas_cortas[i] for i in range(15)}
 
-    # Renombrar columnas en ambos DataFrames
     df_q1 = df_q1.rename(columns=mapeo_q1)
     df_q2 = df_q2.rename(columns=mapeo_q2)
 
-    # ---------- SELECCIONAR Y ORDENAR COLUMNAS COMUNES ----------
-    # Columnas fijas que queremos conservar
+    # ---------- SELECCIONAR COLUMNAS FIJAS ----------
     columnas_fijas_q1 = ['ID', 'Hora de inicio', 'Hora de finalización', 
                          'Correo electrónico', 'Nombre', 'Nombre de la Concesión', 
                          'Área / Cargo']
-    # En Q2 no hay ID, ni correo, ni horas. Usamos 'Nombre' como identificador
     columnas_fijas_q2 = ['Nombre', 'Nombre de la Concesión', 'Área / Cargo']
 
-    # Tomamos solo las columnas fijas + las preguntas renombradas
     df_q1 = df_q1[columnas_fijas_q1 + preguntas_cortas]
     df_q2 = df_q2[columnas_fijas_q2 + preguntas_cortas]
 
-    # ---------- AÑADIR COLUMNA CU ----------
+    # ---------- AÑADIR COLUMNA DE TRIMESTRE ----------
     df_q1['CU'] = 'Q1'
     df_q2['CU'] = 'Q2'
 
     # ---------- UNIFICAR AMBOS DATAFRAMES ----------
-    # Para que coincidan, añadimos columnas faltantes en Q2 con NaN
     for col in ['ID', 'Hora de inicio', 'Hora de finalización', 'Correo electrónico']:
         if col not in df_q2.columns:
             df_q2[col] = np.nan
 
-    # Reordenamos columnas para que Q1 y Q2 tengan el mismo orden
     orden_columnas = ['ID', 'Hora de inicio', 'Hora de finalización', 
                       'Correo electrónico', 'Nombre', 'Nombre de la Concesión', 
                       'Área / Cargo'] + preguntas_cortas + ['CU']
     df_q1 = df_q1[orden_columnas]
     df_q2 = df_q2[orden_columnas]
 
-    # Concatenar
     df = pd.concat([df_q1, df_q2], ignore_index=True)
 
     # ---------- CONVERTIR PREGUNTAS A NUMÉRICO ----------
     for p in preguntas_cortas:
         df[p] = pd.to_numeric(df[p], errors='coerce')
 
-    # ---------- CALCULAR TOTAL PROMEDIO GENERAL (PROMEDIO DE LAS 15 PREGUNTAS) ----------
+    # ---------- CALCULAR TOTAL PROMEDIO GENERAL ----------
     df['Total_Promedio'] = df[preguntas_cortas].mean(axis=1)
 
-    # ---------- DETECTAR COLUMNA DE NPS (solo existe en Q2) ----------
-    # En Q2 hay una columna adicional llamada "¿Qué probabilidades hay de que recomiende usar TeleVía?"
-    # La identificamos y la añadimos como columna NPS (solo para Q2)
-    if '¿Qué probabilidades hay de que recomiende usar TeleVía?' in df_q2.columns:
-        # Primero la renombramos en el df_q2 original antes de concatenar
-        df_q2_temp = pd.read_excel(
-            'Encuesta concesiones TLV Q1 y Q2.xlsx',
-            sheet_name='Calificaciones Q2',
-            header=0
-        )
-        # Buscar la columna de NPS por su nombre exacto
-        nps_col = '¿Qué probabilidades hay de que recomiende usar TeleVía?'
-        if nps_col in df_q2_temp.columns:
-            df_q2_temp = df_q2_temp[['Nombre', nps_col]].rename(columns={nps_col: 'NPS'})
-            # Hacemos merge con el df principal usando 'Nombre'
-            df = df.merge(df_q2_temp, on='Nombre', how='left')
-
-    # Si no se encontró NPS, creamos columna vacía
-    if 'NPS' not in df.columns:
+    # ---------- EXTRAER NPS (SOLO Q2) ----------
+    df_q2_nps = pd.read_excel(
+        'Encuesta concesiones TLV Q1 y Q2.xlsx',
+        sheet_name='Calificaciones Q2',
+        header=0
+    )
+    df_q2_nps.columns = df_q2_nps.columns.str.strip()
+    nps_col = None
+    for col in df_q2_nps.columns:
+        if 'probabilidad' in col.lower() or 'recomiende' in col.lower():
+            nps_col = col
+            break
+    if nps_col is not None:
+        df_q2_nps = df_q2_nps[['Nombre', nps_col]].rename(columns={nps_col: 'NPS'})
+        df = df.merge(df_q2_nps, on='Nombre', how='left')
+    else:
         df['NPS'] = np.nan
 
-    # ---------- COLUMNAS DE TEXTO LIBRE (COMENTARIOS) ----------
-    # Identificar columnas que contienen texto abierto:
-    # En Q1: "¿Qué aspectos considera que TeleVía realiza correctamente y debe mantener?"
-    #         "¿Qué aspectos considera que TeleVía realiza incorrectamente y debe corregir..."
-    #         "Comentarios adicionales / contacto para seguimiento..."
-    # En Q2: las mismas 3 preguntas al final
-
-    # Buscar por palabras clave
-    texto_cols = []
+    # ---------- DETECTAR COLUMNAS DE TEXTO ----------
     for col in df.columns:
-        if any(key in col.lower() for key in ['correctamente', 'incorrectamente', 'comentarios adicionales', 'contacto']):
-            texto_cols.append(col)
-
-    # Si no se encontraron, asignar nombres genéricos basados en posición
-    if not texto_cols:
-        # En Q1 están al final, en Q2 también al final
-        # Las tomamos manualmente de los nombres originales
-        texto_cols = [
-            '¿Qué aspectos considera que TeleVía realiza correctamente y debe mantener?',
-            '¿Qué aspectos considera que TeleVía realiza incorrectamente y debe corregir, (Que no este  mencionado arriba)?',
-            'Comentarios adicionales / contacto para seguimiento (nombre y correo si desea respuesta personalizada):'
-        ]
-
-    # Renombrar columnas de texto para que sean fáciles de usar
-    for col in texto_cols:
-        if col in df.columns:
-            if 'correctamente' in col.lower():
-                df.rename(columns={col: 'Aciertos'}, inplace=True)
-            elif 'incorrectamente' in col.lower():
-                df.rename(columns={col: 'Áreas_mejora'}, inplace=True)
-            elif 'adicionales' in col.lower() or 'contacto' in col.lower():
-                df.rename(columns={col: 'Comentarios_contacto'}, inplace=True)
+        if 'correctamente' in col.lower():
+            df.rename(columns={col: 'Aciertos'}, inplace=True)
+        elif 'incorrectamente' in col.lower():
+            df.rename(columns={col: 'Áreas_mejora'}, inplace=True)
+        elif 'adicionales' in col.lower() or 'contacto' in col.lower():
+            df.rename(columns={col: 'Comentarios_contacto'}, inplace=True)
 
     return df, preguntas_cortas
 
@@ -188,29 +149,24 @@ df, preguntas = load_data()
 st.sidebar.image("https://www.aleatica.com/wp-content/uploads/2024/01/logo-aleatica.png", width=200)
 st.sidebar.title("🔍 Filtros")
 
-# --- MODO OSCURO ---
 modo_oscuro = st.sidebar.toggle("🌙 Activar Modo Oscuro", value=False)
 template = 'plotly_dark' if modo_oscuro else 'plotly_white'
 
-# --- UMBRAL DE ALERTA ---
 umbral_alerta = st.sidebar.slider("🚨 Umbral de alerta (%)", 1, 20, 5,
                                  help="Si la satisfacción baja más de este % entre Q1 y Q2, se mostrará una alerta.")
 
-# --- FILTRO DE CU ---
 cu_selected = st.sidebar.multiselect(
     "Selecciona trimestre",
     options=sorted(df['CU'].unique()),
     default=sorted(df['CU'].unique())
 )
 
-# --- FILTRO DE CONCESIÓN ---
 concesiones = st.sidebar.multiselect(
     "Filtrar por concesión",
     options=sorted(df['Nombre de la Concesión'].dropna().unique()),
     default=sorted(df['Nombre de la Concesión'].dropna().unique())
 )
 
-# Aplicar filtros
 df_filtrado = df[df['CU'].isin(cu_selected)]
 df_filtrado = df_filtrado[df_filtrado['Nombre de la Concesión'].isin(concesiones)]
 
@@ -235,7 +191,6 @@ else:
 # FUNCIONES DE CÁLCULO
 # ============================================================
 def calc_nps(group):
-    """Calcula NPS a partir de la columna NPS (0-10)"""
     if group['NPS'].count() == 0:
         return np.nan
     promotores = (group['NPS'] >= 9).sum()
@@ -281,7 +236,6 @@ with col1:
               delta=f"{delta:+.2f}" if len(cu_selected)>1 else None)
 
 with col2:
-    # NPS solo para Q2 (si está seleccionado)
     if 'Q2' in cu_selected:
         nps_val = calc_nps(df_filtrado[df_filtrado['CU']=='Q2'])
         st.metric("📊 NPS (Q2)", f"{nps_val:.1f}")
@@ -293,7 +247,6 @@ with col3:
     st.metric("📋 Total Encuestas", f"{total_encuestas:,}")
 
 with col4:
-    # Brecha promedio en preguntas
     if 'Q1' in cu_selected and 'Q2' in cu_selected:
         brechas = []
         for p in preguntas:
@@ -325,29 +278,27 @@ plot_config = {
 # ============================================================
 st.subheader("🔹 Comparativa por dimensión")
 
+etiquetas = {
+    'P1_Eficiencia_Operativa': 'Eficiencia operativa',
+    'P2_Tiempos_Respuesta': 'Tiempos de respuesta',
+    'P3_Precision_Conciliaciones': 'Precisión conciliaciones',
+    'P4_Facilidad_Procesos': 'Facilidad procesos',
+    'P5_Gestion_Incobrables': 'Gestión incobrables',
+    'P6_Monitoreo_24_7': 'Monitoreo 24/7',
+    'P7_Comunicacion_Eventos': 'Comunicación eventos',
+    'P8_Dispersion_Pagos': 'Dispersión de pagos',
+    'P9_Transparencia_Reportes': 'Transparencia reportes',
+    'P10_Acompanamiento_Comercial': 'Acompañamiento comercial',
+    'P11_Informacion_Estrategica': 'Información estratégica',
+    'P12_Reuniones_Mensuales': 'Reuniones mensuales',
+    'P13_Reporte_BI': 'Reporte BI',
+    'P14_Comunicacion_Proactiva': 'Comunicación proactiva',
+    'P15_Satisfaccion_Integral': 'Satisfacción integral'
+}
+
 if len(cu_selected) > 1:
-    # Preparar datos
     df_means = df_filtrado.groupby('CU')[preguntas].mean().reset_index()
     df_means_melt = df_means.melt(id_vars='CU', var_name='Pregunta', value_name='Promedio')
-    
-    # Renombrar preguntas para mejor visualización
-    etiquetas = {
-        'P1_Eficiencia_Operativa': 'Eficiencia operativa',
-        'P2_Tiempos_Respuesta': 'Tiempos de respuesta',
-        'P3_Precision_Conciliaciones': 'Precisión conciliaciones',
-        'P4_Facilidad_Procesos': 'Facilidad procesos',
-        'P5_Gestion_Incobrables': 'Gestión incobrables',
-        'P6_Monitoreo_24_7': 'Monitoreo 24/7',
-        'P7_Comunicacion_Eventos': 'Comunicación eventos',
-        'P8_Dispersion_Pagos': 'Dispersión de pagos',
-        'P9_Transparencia_Reportes': 'Transparencia reportes',
-        'P10_Acompanamiento_Comercial': 'Acompañamiento comercial',
-        'P11_Informacion_Estrategica': 'Información estratégica',
-        'P12_Reuniones_Mensuales': 'Reuniones mensuales',
-        'P13_Reporte_BI': 'Reporte BI',
-        'P14_Comunicacion_Proactiva': 'Comunicación proactiva',
-        'P15_Satisfaccion_Integral': 'Satisfacción integral'
-    }
     df_means_melt['Pregunta'] = df_means_melt['Pregunta'].map(etiquetas)
     
     fig = px.bar(df_means_melt,
@@ -363,7 +314,6 @@ if len(cu_selected) > 1:
     fig.update_xaxes(tickangle=45)
     st.plotly_chart(fig, use_container_width=True, config=plot_config)
 else:
-    # Mostrar solo un trimestre
     df_means = df_filtrado[preguntas].mean().reset_index()
     df_means.columns = ['Pregunta', 'Promedio']
     df_means['Pregunta'] = df_means['Pregunta'].map(etiquetas)
@@ -386,7 +336,7 @@ if len(cu_selected) > 1:
     fig_radar = go.Figure()
     for cu in ['Q1', 'Q2']:
         valores = df_filtrado[df_filtrado['CU']==cu][preguntas].mean().values.tolist()
-        valores.append(valores[0])  # cerrar el radar
+        valores.append(valores[0])
         etiquetas_radar = list(etiquetas.values()) + [list(etiquetas.values())[0]]
         fig_radar.add_trace(go.Scatterpolar(
             r=valores,
@@ -415,7 +365,6 @@ if 'Q2' in cu_selected:
     col1, col2 = st.columns(2)
     
     with col1:
-        # Distribución de NPS (0-10)
         df_nps_dist = df_q2_filtrado['NPS'].value_counts().reset_index()
         df_nps_dist.columns = ['Puntuación', 'Conteo']
         df_nps_dist = df_nps_dist.sort_values('Puntuación')
@@ -429,7 +378,6 @@ if 'Q2' in cu_selected:
         st.plotly_chart(fig_nps, use_container_width=True, config=plot_config)
     
     with col2:
-        # Cálculo de NPS con categorías
         nps_val = calc_nps(df_q2_filtrado)
         promotores = (df_q2_filtrado['NPS'] >= 9).sum()
         pasivos = (df_q2_filtrado['NPS'].between(7, 8)).sum()
@@ -452,7 +400,6 @@ st.header("👤 Perfil del Encuestado")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    # Distribución por concesión
     df_concesion = df_filtrado['Nombre de la Concesión'].value_counts().reset_index()
     df_concesion.columns = ['Concesión', 'Conteo']
     fig_conc = px.bar(df_concesion,
@@ -465,7 +412,6 @@ with col1:
     st.plotly_chart(fig_conc, use_container_width=True, config=plot_config)
 
 with col2:
-    # Distribución por área/cargo
     df_area = df_filtrado['Área / Cargo'].value_counts().reset_index()
     df_area.columns = ['Área/Cargo', 'Conteo']
     fig_area = px.bar(df_area,
@@ -478,7 +424,6 @@ with col2:
     st.plotly_chart(fig_area, use_container_width=True, config=plot_config)
 
 with col3:
-    # Comparativa de satisfacción por concesión (solo si ambas CUs)
     if 'Q1' in cu_selected and 'Q2' in cu_selected:
         df_conc_prom = df_filtrado.groupby(['CU', 'Nombre de la Concesión'])['Total_Promedio'].mean().reset_index()
         fig_conc_prom = px.bar(df_conc_prom,
@@ -505,10 +450,8 @@ text_cols_existentes = [col for col in text_cols if col in df_filtrado.columns]
 if text_cols_existentes:
     st.header("💬 Análisis de Comentarios")
     
-    # Seleccionar columna de texto
     col_texto = st.selectbox("Selecciona el tipo de comentario", text_cols_existentes)
     
-    # Filtrar textos no vacíos
     textos = df_filtrado[col_texto].dropna().astype(str)
     textos = textos[textos.str.strip() != '']
     
@@ -527,7 +470,6 @@ if text_cols_existentes:
         
         with col_t2:
             st.subheader("📊 Palabras más frecuentes")
-            # Limpieza básica en español
             stopwords = set(['que', 'de', 'la', 'el', 'en', 'y', 'a', 'los', 'del', 'las', 'un', 'por', 'con', 'no',
                              'su', 'para', 'es', 'lo', 'como', 'mas', 'pero', 'sus', 'le', 'ya', 'este', 'entre', 'si',
                              'porque', 'esta', 'son', 'uno', 'todo', 'tambien', 'otro', 'asi', 'mis', 'te', 'se', 'me',
@@ -546,7 +488,6 @@ if text_cols_existentes:
             if len(words) > 0:
                 counter = Counter(words).most_common(20)
                 df_words = pd.DataFrame(counter, columns=['Palabra', 'Frecuencia'])
-                
                 fig_words = px.bar(df_words,
                                    x='Frecuencia',
                                    y='Palabra',
@@ -573,7 +514,7 @@ st.header("📋 Datos crudos")
 st.dataframe(df_filtrado, use_container_width=True)
 
 # ============================================================
-# 6. DESCARGA DE DATOS FILTRADOS
+# 6. DESCARGA DE DATOS FILTRADOS (CORREGIDO)
 # ============================================================
 csv = df_filtrado.to_csv(index=False).encode('utf-8')
 st.download_button(
@@ -581,6 +522,6 @@ st.download_button(
     data=csv,
     file_name='datos_filtrados.csv',
     mime='text/csv',
-
+)  # <--- AQUÍ CIERRA EL PARÉNTESIS
 
 st.caption("Dashboard desarrollado con Streamlit | Datos de encuesta de satisfacción - Telepeaje")
