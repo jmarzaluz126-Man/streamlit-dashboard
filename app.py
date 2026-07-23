@@ -16,6 +16,16 @@ st.set_page_config(
 )
 
 # ============================================================
+# COLORES CORPORATIVOS
+# ============================================================
+COLOR_Q1 = '#E31B23'      # Rojo Aleática
+COLOR_Q2 = '#1a2a6c'      # Azul profundo
+COLOR_META = '#C8102E'    # Rojo Televía
+COLOR_VERDE = '#28a745'   # Mejora
+COLOR_AMARILLO = '#ffc107' # Alerta
+COLOR_ROJO = '#dc3545'    # Crítico
+
+# ============================================================
 # CARGA DE DATOS
 # ============================================================
 @st.cache_data
@@ -246,9 +256,11 @@ plot_config = {
 }
 
 # ============================================================
-# 2. TABLA DE RESULTADOS GENERALES
+# 2. TABLA DE RESULTADOS GENERALES (CON META 8)
 # ============================================================
-st.header("📊 Resultados Generales (Promedios)")
+st.header("📊 Resultados Generales vs Meta (mínimo 8)")
+
+META = 8.0
 
 # Definir las dimensiones clave del informe (10 dimensiones)
 dimensiones = {
@@ -264,6 +276,16 @@ dimensiones = {
     'Satisfacción general': 'P15_Satisfaccion_Integral'
 }
 
+def get_meta_status(valor):
+    if pd.isna(valor):
+        return 'N/A'
+    elif valor >= META:
+        return '🟢 Cumple'
+    elif valor >= 7.0:
+        return '🟡 Cerca'
+    else:
+        return '🔴 Prioridad'
+
 tabla = []
 for nombre, clave in dimensiones.items():
     q1_prom = df_filtrado[df_filtrado['CU']=='Q1'][clave].mean()
@@ -273,7 +295,10 @@ for nombre, clave in dimensiones.items():
     if np.isnan(q2_prom):
         q2_prom = np.nan
     variacion = q2_prom - q1_prom if (not np.isnan(q1_prom) and not np.isnan(q2_prom)) else np.nan
-    # Estatus: si la variación es negativa -> "🔴 Requiere mejora", si es positiva -> "✅ Mejora", si es 0 -> "⚖️ Estable"
+    distancia = META - q2_prom if not np.isnan(q2_prom) else np.nan
+    progreso = (q2_prom / META) * 100 if not np.isnan(q2_prom) else np.nan
+    
+    # Estatus de mejora
     if not np.isnan(variacion):
         if variacion < 0:
             status = "🔴 Requiere mejora"
@@ -283,18 +308,28 @@ for nombre, clave in dimensiones.items():
             status = "⚖️ Estable"
     else:
         status = "N/A"
+    
+    # Estatus vs meta
+    meta_status = get_meta_status(q2_prom)
+    
     tabla.append({
         'Dimensión': nombre,
         'Q1': f"{q1_prom:.2f}" if not np.isnan(q1_prom) else "N/A",
         'Q2': f"{q2_prom:.2f}" if not np.isnan(q2_prom) else "N/A",
         'Variación': f"{variacion:+.2f}" if not np.isnan(variacion) else "N/A",
-        'Estatus': status
+        'Mejora': status,
+        'Meta 8': meta_status,
+        'Distancia': f"{distancia:+.2f}" if not np.isnan(distancia) else "N/A",
+        'Progreso': f"{progreso:.0f}%" if not np.isnan(progreso) else "N/A"
     })
 
 # Añadir fila de promedio general
 prom_q1 = df_filtrado[df_filtrado['CU']=='Q1']['Total_Promedio'].mean()
 prom_q2 = df_filtrado[df_filtrado['CU']=='Q2']['Total_Promedio'].mean()
 variacion_gral = prom_q2 - prom_q1 if (not np.isnan(prom_q1) and not np.isnan(prom_q2)) else np.nan
+distancia_gral = META - prom_q2 if not np.isnan(prom_q2) else np.nan
+progreso_gral = (prom_q2 / META) * 100 if not np.isnan(prom_q2) else np.nan
+
 if not np.isnan(variacion_gral):
     if variacion_gral < 0:
         status_gral = "🔴 Requiere mejora"
@@ -310,7 +345,10 @@ tabla.append({
     'Q1': f"{prom_q1:.2f}" if not np.isnan(prom_q1) else "N/A",
     'Q2': f"{prom_q2:.2f}" if not np.isnan(prom_q2) else "N/A",
     'Variación': f"{variacion_gral:+.2f}" if not np.isnan(variacion_gral) else "N/A",
-    'Estatus': status_gral
+    'Mejora': status_gral,
+    'Meta 8': get_meta_status(prom_q2),
+    'Distancia': f"{distancia_gral:+.2f}" if not np.isnan(distancia_gral) else "N/A",
+    'Progreso': f"{progreso_gral:.0f}%" if not np.isnan(progreso_gral) else "N/A"
 })
 
 df_tabla = pd.DataFrame(tabla)
@@ -357,7 +395,7 @@ if len(cu_selected) > 1:
                  x='Promedio',
                  color='CU',
                  barmode='group',
-                 color_discrete_map={'Q1': '#1f77b4', 'Q2': '#ff7f0e'},
+                 color_discrete_map={'Q1': COLOR_Q1, 'Q2': COLOR_Q2},
                  text_auto='.2f',
                  title='Promedio por dimensión - Q1 vs Q2',
                  template=template,
@@ -372,6 +410,7 @@ else:
     fig = px.bar(df_means_single,
                  y='Pregunta',
                  x='Promedio',
+                 color='Pregunta',
                  text_auto='.2f',
                  title=f'Promedio por dimensión - {cu_selected[0]}',
                  template=template,
@@ -380,7 +419,57 @@ else:
     st.plotly_chart(fig, use_container_width=True, config=plot_config)
 
 # ============================================================
-# 4. RADAR CHART (SOLO DIMENSIONES CLAVE)
+# 4. GRÁFICO DE CUMPLIMIENTO DE META (Q2 vs META 8)
+# ============================================================
+st.subheader("🎯 Cumplimiento de Meta (mínimo 8)")
+
+# Preparar datos para el gráfico de meta
+meta_data = []
+for nombre, clave in dimensiones.items():
+    q2_val = df_filtrado[df_filtrado['CU']=='Q2'][clave].mean()
+    if not np.isnan(q2_val):
+        meta_data.append({
+            'Dimensión': nombre,
+            'Q2': q2_val,
+            'Meta': META
+        })
+
+if meta_data:
+    df_meta = pd.DataFrame(meta_data)
+    
+    fig_meta = go.Figure()
+    # Barras de Q2
+    fig_meta.add_trace(go.Bar(
+        x=df_meta['Dimensión'],
+        y=df_meta['Q2'],
+        name='Q2 2026',
+        marker_color=COLOR_Q1,
+        text=df_meta['Q2'].round(2),
+        textposition='outside'
+    ))
+    # Línea de meta
+    fig_meta.add_trace(go.Scatter(
+        x=df_meta['Dimensión'],
+        y=[META] * len(df_meta),
+        mode='lines',
+        name=f'Meta ({META})',
+        line=dict(color=COLOR_META, width=3, dash='dash'),
+        showlegend=True
+    ))
+    
+    fig_meta.update_layout(
+        height=450,
+        yaxis_range=[0, 9],
+        template=template,
+        showlegend=True,
+        xaxis_tickangle=45
+    )
+    st.plotly_chart(fig_meta, use_container_width=True, config=plot_config)
+else:
+    st.info("No hay datos de Q2 disponibles para mostrar la meta.")
+
+# ============================================================
+# 5. RADAR CHART (SOLO DIMENSIONES CLAVE)
 # ============================================================
 if len(cu_selected) > 1:
     st.subheader("🔸 Radar Comparativo")
@@ -413,7 +502,7 @@ if len(cu_selected) > 1:
             theta=etiquetas_radar,
             name=cu,
             fill='toself',
-            line_color='#1f77b4' if cu=='Q1' else '#ff7f0e',
+            line_color=COLOR_Q1 if cu=='Q1' else COLOR_Q2,
             opacity=0.6
         ))
     
@@ -435,7 +524,7 @@ if len(cu_selected) > 1:
 st.divider()
 
 # ============================================================
-# 5. NPS
+# 6. NPS
 # ============================================================
 if 'Q2' in cu_selected:
     st.header("⭐ NPS - Q2")
@@ -453,7 +542,8 @@ if 'Q2' in cu_selected:
                          y='Conteo',
                          text_auto=True,
                          title='Distribución de probabilidad de recomendación',
-                         template=template)
+                         template=template,
+                         color_discrete_sequence=[COLOR_Q1])
         fig_nps.update_layout(xaxis=dict(tickmode='linear', dtick=1), height=400)
         st.plotly_chart(fig_nps, use_container_width=True, config=plot_config)
     
@@ -473,7 +563,7 @@ if 'Q2' in cu_selected:
 st.divider()
 
 # ============================================================
-# 6. COMPARATIVA POR CONCESIÓN
+# 7. COMPARATIVA POR CONCESIÓN
 # ============================================================
 st.header("📋 Comparativa por Concesión (Q1 vs Q2)")
 
@@ -498,7 +588,7 @@ st.dataframe(df_conc_pivot.style.format({'Q1': '{:.2f}', 'Q2': '{:.2f}', 'Variac
 if len(cu_selected) > 1:
     fig_conc = px.bar(df_conc, x='Nombre de la Concesión', y='Total_Promedio',
                       color='CU', barmode='group',
-                      color_discrete_map={'Q1': '#1f77b4', 'Q2': '#ff7f0e'},
+                      color_discrete_map={'Q1': COLOR_Q1, 'Q2': COLOR_Q2},
                       title='Satisfacción promedio por concesión',
                       template=template)
     fig_conc.update_layout(yaxis_range=[0, 5.5], height=450)
@@ -507,7 +597,7 @@ if len(cu_selected) > 1:
 st.divider()
 
 # ============================================================
-# 7. ANÁLISIS DE COMENTARIOS
+# 8. ANÁLISIS DE COMENTARIOS
 # ============================================================
 text_cols = ['Aciertos', 'Áreas_mejora', 'Comentarios_contacto']
 text_cols_existentes = [col for col in text_cols if col in df_filtrado.columns]
@@ -560,7 +650,7 @@ if text_cols_existentes:
                                    title='Top 20 palabras',
                                    template=template,
                                    color='Frecuencia',
-                                   color_continuous_scale='Blues')
+                                   color_continuous_scale='Reds')
                 fig_words.update_layout(height=500, yaxis=dict(autorange="reversed"))
                 st.plotly_chart(fig_words, use_container_width=True, config=plot_config)
             else:
@@ -573,7 +663,7 @@ else:
 st.divider()
 
 # ============================================================
-# 8. DATOS CRUDOS
+# 9. DATOS CRUDOS
 # ============================================================
 st.header("📋 Datos crudos")
 st.dataframe(df_filtrado, use_container_width=True)
