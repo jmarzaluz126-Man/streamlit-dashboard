@@ -10,7 +10,7 @@ import re
 # CONFIGURACIÓN DE PÁGINA
 # ============================================================
 st.set_page_config(
-    page_title="Dashboard Telepeaje - Satisfacción",
+    page_title="Encuesta integral de satisfacción concesiones Televía",
     layout="wide",
     page_icon="🛣️"
 )
@@ -194,7 +194,7 @@ def calc_nps(group):
 # ============================================================
 # ENCABEZADO
 # ============================================================
-st.title("📊 Encuesta de Satisfacción - Telepeaje")
+st.title("📊 Encuesta integral de satisfacción concesiones Televía")
 st.markdown(f"**Registros analizados:** {len(df_filtrado):,} | **Trimestres:** {', '.join(cu_selected)}")
 st.divider()
 
@@ -569,22 +569,39 @@ st.header("📋 Comparativa por Concesión (Q1 vs Q2)")
 
 # Calcular promedios por concesión y trimestre
 df_conc = df_filtrado.groupby(['CU', 'Nombre de la Concesión'])['Total_Promedio'].mean().reset_index()
-# Pivotar
+
+# Pivotar para tener Q1 y Q2 como columnas
 df_conc_pivot = df_conc.pivot(index='Nombre de la Concesión', columns='CU', values='Total_Promedio').reset_index()
+df_conc_pivot.columns = ['Concesión', 'Q1', 'Q2']
+
 # Calcular variación
 if 'Q1' in df_conc_pivot.columns and 'Q2' in df_conc_pivot.columns:
     df_conc_pivot['Variación'] = df_conc_pivot['Q2'] - df_conc_pivot['Q1']
 else:
     df_conc_pivot['Variación'] = np.nan
 
-# Renombrar
-df_conc_pivot.columns = ['Concesión', 'Q1', 'Q2', 'Variación']
+# Crear columna de estatus
+def get_status(variacion):
+    if pd.isna(variacion):
+        return '🆕 Nueva'
+    elif variacion < 0:
+        return '🔴 Retroceso'
+    elif variacion == 0:
+        return '⚖️ Estable'
+    else:
+        return '✅ Mejora'
 
-# Aplicar estilo y mostrar
-st.dataframe(df_conc_pivot.style.format({'Q1': '{:.2f}', 'Q2': '{:.2f}', 'Variación': '{:+.2f}'}),
-             use_container_width=True, hide_index=True)
+df_conc_pivot['Estatus'] = df_conc_pivot['Variación'].apply(get_status)
 
-# Gráfico de barras
+# Formatear para mostrar
+df_conc_display = df_conc_pivot.copy()
+df_conc_display['Q1'] = df_conc_display['Q1'].apply(lambda x: f"{x:.2f}" if not pd.isna(x) else "N/A")
+df_conc_display['Q2'] = df_conc_display['Q2'].apply(lambda x: f"{x:.2f}" if not pd.isna(x) else "N/A")
+df_conc_display['Variación'] = df_conc_display['Variación'].apply(lambda x: f"{x:+.2f}" if not pd.isna(x) else "N/A")
+
+st.dataframe(df_conc_display, use_container_width=True, hide_index=True)
+
+# Gráfico de barras por concesión
 if len(cu_selected) > 1:
     fig_conc = px.bar(df_conc, x='Nombre de la Concesión', y='Total_Promedio',
                       color='CU', barmode='group',
