@@ -30,6 +30,7 @@ META = 8.0
 # ============================================================
 # CARGA DE DATOS (DINÁMICA Q1..Q4)
 # ============================================================
+# ¡Asegúrate de que este sea el nombre exacto de tu archivo Excel!
 ARCHIVO = 'Encuesta concesiones TLV Q1, Q2 y Q3.xlsx'
 
 PREGUNTAS_CORTAS = [
@@ -66,10 +67,7 @@ def _limpiar_df(df):
 
 def _parsear_trimestre(df, cu, sheet_name):
     """
-    Convierte una hoja cruda en un DataFrame normalizado con columnas:
-    ID, Hora de inicio, Hora de finalización, Correo electrónico,
-    Nombre, Nombre de la Concesión, Área / Cargo,
-    P1..P15, NPS, Aciertos, Áreas_mejora, Comentarios_contacto, CU
+    Convierte una hoja cruda en un DataFrame normalizado.
     """
     df = _limpiar_df(df)
 
@@ -228,7 +226,6 @@ st.header("📈 Resumen Ejecutivo")
 
 col1, col2, col3, col4 = st.columns(4)
 
-# Satisfacción global: último trimestre seleccionado vs anterior
 ultimo_cu = cu_selected[-1] if cu_selected else None
 prev_cu = cu_selected[-2] if len(cu_selected) > 1 else None
 
@@ -555,14 +552,25 @@ if len(cu_selected) > 1:
 st.divider()
 
 # ============================================================
-# 8. ANÁLISIS DE COMENTARIOS
+# 8. ANÁLISIS DE COMENTARIOS (CON FILTRO ANTI-BASURA)
 # ============================================================
 text_cols_existentes = [c for c in TEXT_COLS if c in df_filtrado.columns]
 if text_cols_existentes:
     st.header("💬 Análisis de Comentarios")
     col_texto = st.selectbox("Selecciona el tipo de comentario", text_cols_existentes)
+    
+    # Limpiar nulos y pasar a string
     textos = df_filtrado[col_texto].dropna().astype(str)
     textos = textos[textos.str.strip() != '']
+    
+    # --- FILTRO DE SEGURIDAD CONTRA TEXTO BASURA ---
+    # Evita que se muestre el texto de ayuda de Python/Streamlit
+    palabras_basura = ['import streamlit', 'st.write', '>>>', 'streamlit run', 'How to use', 'my_script.py', 'new tab will open']
+    for basura in palabras_basura:
+        textos = textos[~textos.str.contains(basura, case=False, na=False)]
+    
+    # Ignorar textos exageradamente largos (por si acaso)
+    textos = textos[textos.str.len() < 1000]
 
     if len(textos) > 0:
         col_t1, col_t2 = st.columns([1, 1])
@@ -574,9 +582,10 @@ if text_cols_existentes:
                 st.dataframe(pd.DataFrame(res, columns=[col_texto]), use_container_width=True)
             else:
                 st.dataframe(pd.DataFrame(textos.head(100), columns=[col_texto]), use_container_width=True)
-                st.caption(f"Mostrando 100 de {len(textos)} comentarios.")
+                st.caption(f"Mostrando {min(100, len(textos))} de {len(textos)} comentarios.")
         with col_t2:
             st.subheader("📊 Palabras más frecuentes")
+            # Se añaden palabras de programación a las stopwords para que no salgan en el gráfico
             stopwords = set(['que', 'de', 'la', 'el', 'en', 'y', 'a', 'los', 'del', 'las', 'un', 'por', 'con', 'no',
                              'su', 'para', 'es', 'lo', 'como', 'mas', 'pero', 'sus', 'le', 'ya', 'este', 'entre', 'si',
                              'porque', 'esta', 'son', 'uno', 'todo', 'tambien', 'otro', 'asi', 'mis', 'te', 'se', 'me',
@@ -584,24 +593,16 @@ if text_cols_existentes:
                              'nada', 'muy', 'poco', 'mucho', 'tan', 'cada', 'solo', 'hasta', 'desde', 'durante',
                              'mediante', 'contra', 'sobre', 'entre', 'sin', 'ni', 'o', 'u', 'cual', 'cuales', 'quien',
                              'quienes', 'cuyo', 'cuya', 'cuyos', 'cuyas', 'que', 'ya', 'ha', 'he', 'lo', 'le', 'les',
-                             'me', 'nos', 'os', 'te', 'se', 'sí', 'mí', 'ti'])
+                             'me', 'nos', 'os', 'te', 'se', 'sí', 'mí', 'ti',
+                             'streamlit', 'import', 'write', 'run', 'script', 'app'])
+                             
             all_words = " ".join(textos).lower()
             all_words = re.sub(r'[^\w\s]', ' ', all_words)
             all_words = re.sub(r'\d+', ' ', all_words)
             words = [w for w in all_words.split() if len(w) > 2 and w not in stopwords]
+            
             if words:
                 counter = Counter(words).most_common(20)
                 df_words = pd.DataFrame(counter, columns=['Palabra', 'Frecuencia'])
                 fig_words = px.bar(df_words, x='Frecuencia', y='Palabra', orientation='h',
                                    title='Top 20 palabras', template=template,
-                                   color='Frecuencia', color_continuous_scale='Reds')
-                fig_words.update_layout(height=500, yaxis=dict(autorange="reversed"))
-                st.plotly_chart(fig_words, use_container_width=True, config=plot_config)
-            else:
-                st.info("No se encontraron palabras significativas.")
-    else:
-        st.info("No hay comentarios en esta categoría para los datos seleccionados.")
-else:
-    st.info("💬 No se detectaron columnas de comentarios.")
-
-st
