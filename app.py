@@ -26,7 +26,7 @@ COLORES_CU = {
 }
 COLOR_META = '#C8102E'
 META = 8.5
-
+x
 # ============================================================
 # CARGA DE DATOS (DINÁMICA Q1..Q4)
 # ============================================================
@@ -206,7 +206,7 @@ st.divider()
 # ============================================================
 # 2. TABLA DE RESULTADOS GENERALES
 # ============================================================
-st.header(f"📊 Resultados Generales vs Meta (mínimo {META:.0f})")
+st.header(f"📊 Resultados Generales vs Meta (mínimo {META:.1f})")
 dimensiones = {
     'Eficiencia operativa (gestión de cruces)': 'P1_Eficiencia_Operativa',
     'Tiempos de respuesta a incidencias': 'P2_Tiempos_Respuesta',
