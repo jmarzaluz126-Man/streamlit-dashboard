@@ -5,6 +5,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from collections import Counter
 import re
+import os
+import glob
 
 # ============================================================
 # CONFIGURACIÓN DE PÁGINA
@@ -16,7 +18,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# COLORES CORPORATIVOS
+# COLORES CORPORATIVOS Y META
 # ============================================================
 COLORES_CU = {
     'Q1': '#E31B23',   # Rojo Aleática
@@ -25,14 +27,11 @@ COLORES_CU = {
     'Q4': '#ffc107',   # Amarillo
 }
 COLOR_META = '#C8102E'
-META = 8.5
-x
+META = 8.5  # <--- AQUÍ SE CAMBIÓ LA META A 8.5
+
 # ============================================================
 # CARGA DE DATOS (DINÁMICA Q1..Q4)
 # ============================================================
-# ¡Asegúrate de que este sea el nombre exacto de tu archivo en GitHub!
-ARCHIVO = 'Encuesta concesiones TLV Q1, Q2 y Q3.xlsx'
-
 PREGUNTAS_CORTAS = [
     'P1_Eficiencia_Operativa', 'P2_Tiempos_Respuesta', 'P3_Precision_Conciliaciones',
     'P4_Facilidad_Procesos', 'P5_Gestion_Incobrables', 'P6_Monitoreo_24_7',
@@ -47,7 +46,6 @@ def _limpiar_df(df):
     """Elimina filas de subtotal, vacías y filas sin nombre."""
     df = df.copy()
     df = df.dropna(how='all')
-    # Quitar filas que contengan 'SUBTOTAL' en cualquier columna
     mask = df.apply(lambda r: r.astype(str).str.contains('SUBTOTAL', case=False, na=False).any(), axis=1)
     df = df[~mask]
     return df.reset_index(drop=True)
@@ -56,35 +54,24 @@ def _parsear_trimestre(df, cu):
     df = _limpiar_df(df)
     
     if cu == 'Q1':
-        # Q1: 7 columnas fijas iniciales. Preguntas en 7:22. NPS no existe. Texto en 23, 24, 25.
         df_fijas = df.iloc[:, 0:7].copy()
         df_fijas.columns = ['ID', 'Hora de inicio', 'Hora de finalización', 'Correo electrónico', 'Nombre', 'Nombre de la Concesión', 'Área / Cargo']
-        
         df_preg = df.iloc[:, 7:22].copy()
         df_preg.columns = PREGUNTAS_CORTAS
-        
-        # En Q1, las últimas 3 columnas son texto. (La columna 22 es "Total Promedio General" que ignoramos)
         df_text = df.iloc[:, 23:26].copy()
         df_text.columns = TEXT_COLS
-        
         df_full = pd.concat([df_fijas.reset_index(drop=True), df_preg.reset_index(drop=True), df_text.reset_index(drop=True)], axis=1)
         df_full['NPS'] = np.nan
 
     elif cu in ('Q2', 'Q3', 'Q4'):
-        # Q2/Q3/Q4: 3 columnas fijas iniciales. Preguntas en 3:18. NPS en 18. Total en 19. Texto en 20, 21, 22.
         df_fijas = df.iloc[:, 0:3].copy()
         df_fijas.columns = ['Nombre', 'Nombre de la Concesión', 'Área / Cargo']
-        
         df_preg = df.iloc[:, 3:18].copy()
         df_preg.columns = PREGUNTAS_CORTAS
-        
         nps = pd.to_numeric(df.iloc[:, 18], errors='coerce').rename('NPS')
-        
         df_text = df.iloc[:, 20:23].copy()
         df_text.columns = TEXT_COLS
-        
         df_full = pd.concat([df_fijas.reset_index(drop=True), df_preg.reset_index(drop=True), nps.reset_index(drop=True), df_text.reset_index(drop=True)], axis=1)
-        
         for col in ['ID', 'Hora de inicio', 'Hora de finalización', 'Correo electrónico']:
             df_full[col] = np.nan
 
@@ -92,18 +79,34 @@ def _parsear_trimestre(df, cu):
     orden = ['ID', 'Hora de inicio', 'Hora de finalización', 'Correo electrónico', 'Nombre', 'Nombre de la Concesión', 'Área / Cargo'] + PREGUNTAS_CORTAS + ['NPS'] + TEXT_COLS + ['CU']
     return df_full[orden]
 
-
 @st.cache_data(show_spinner=False)
 def load_data():
-    xls = pd.ExcelFile(ARCHIVO)
+    # Buscar cualquier archivo que empiece con 'Encuesta concesiones' y termine en '.xlsx'
+    archivos = glob.glob("Encuesta concesiones*.xlsx")
+    if not archivos:
+        st.error("❌ No se encontró ningún archivo de Excel en la carpeta. Asegúrate de haberlo subido a GitHub.")
+        st.stop()
+    
+    archivo_real = archivos[0]
+    
+    try:
+        xls = pd.ExcelFile(archivo_real)
+    except Exception as e:
+        st.error(f"❌ Error al leer el archivo Excel: {e}")
+        st.stop()
+        
     hojas = xls.sheet_names
     trimestres_disponibles = [cu for cu in ['Q1', 'Q2', 'Q3', 'Q4'] if f'Calificaciones {cu}' in hojas]
+
+    if not trimestres_disponibles:
+        st.error("❌ No se encontraron las pestañas 'Calificaciones Q1', 'Q2', etc. Revisa el Excel.")
+        st.stop()
 
     frames = []
     for cu in trimestres_disponibles:
         sheet = f'Calificaciones {cu}'
         skip = 2 if cu == 'Q1' else 1
-        df_raw = pd.read_excel(ARCHIVO, sheet_name=sheet, header=None, skiprows=skip)
+        df_raw = pd.read_excel(archivo_real, sheet_name=sheet, header=None, skiprows=skip)
         df_norm = _parsear_trimestre(df_raw, cu)
         frames.append(df_norm)
 
@@ -112,19 +115,18 @@ def load_data():
     for p in PREGUNTAS_CORTAS:
         df[p] = pd.to_numeric(df[p], errors='coerce')
     df['NPS'] = pd.to_numeric(df['NPS'], errors='coerce')
-
     df['Total_Promedio'] = df[PREGUNTAS_CORTAS].mean(axis=1)
 
-    # Limpieza y estandarización de strings
     df['Nombre'] = df['Nombre'].astype(str).str.strip()
     df['Nombre de la Concesión'] = df['Nombre de la Concesión'].astype(str).str.strip().str.upper()
     
-    # Estandarización para agrupar concesiones (por si en el futuro hay variaciones)
     homologacion = {
         'AUTOPISTAS DE GUERRERO S.A. DE C.V.': 'AUTOPISTAS DE GUERRERO',
         'METLAPIL': 'AUTOPISTAS DE GUERRERO',
         'CONCESIONARIA AUTOPISTA LIBRAMIENTO HERMOSILLO': 'LIBRAMIENTO HERMOSILLO',
-        'CEM': 'CIRCUITO EXTERIOR MEXIQUENSE'
+        'CEM': 'CIRCUITO EXTERIOR MEXIQUENSE',
+        'VIAS URBANAS': 'VIAS URBANAS',
+        'URBANAS': 'VIAS URBANAS'
     }
     df['Nombre de la Concesión'] = df['Nombre de la Concesión'].replace(homologacion)
 
@@ -204,9 +206,10 @@ with col4:
 st.divider()
 
 # ============================================================
-# 2. TABLA DE RESULTADOS GENERALES
+# 2. TABLA DE RESULTADOS GENERALES (CON META 8.5)
 # ============================================================
 st.header(f"📊 Resultados Generales vs Meta (mínimo {META:.1f})")
+
 dimensiones = {
     'Eficiencia operativa (gestión de cruces)': 'P1_Eficiencia_Operativa',
     'Tiempos de respuesta a incidencias': 'P2_Tiempos_Respuesta',
@@ -239,7 +242,7 @@ for nombre, clave in dimensiones.items():
             fila['Mejora'] = "✅ Mejora" if var > 0 else ("🔴 Requiere mejora" if var < 0 else "⚖️ Estable")
         else:
             fila['Variación'], fila['Mejora'] = "N/A", "N/A"
-        fila['Meta 8'] = get_meta_status(v_ult)
+        fila[f'Meta {META:.1f}'] = get_meta_status(v_ult)
         fila['Distancia'] = f"{META - v_ult:+.2f}" if not np.isnan(v_ult) else "N/A"
         fila['Progreso'] = f"{(v_ult / META) * 100:.0f}%" if not np.isnan(v_ult) else "N/A"
     tabla.append(fila)
@@ -257,7 +260,7 @@ if len(cu_selected) >= 2:
         fila_gral['Mejora'] = "✅ Mejora" if var > 0 else ("🔴 Requiere mejora" if var < 0 else "⚖️ Estable")
     else:
         fila_gral['Variación'], fila_gral['Mejora'] = "N/A", "N/A"
-    fila_gral['Meta 8'] = get_meta_status(v_ult)
+    fila_gral[f'Meta {META:.1f}'] = get_meta_status(v_ult)
     fila_gral['Distancia'] = f"{META - v_ult:+.2f}" if not np.isnan(v_ult) else "N/A"
     fila_gral['Progreso'] = f"{(v_ult / META) * 100:.0f}%" if not np.isnan(v_ult) else "N/A"
 tabla.append(fila_gral)
@@ -292,7 +295,7 @@ else:
 st.plotly_chart(fig, use_container_width=True, config=plot_config)
 
 # 4. GRÁFICO DE CUMPLIMIENTO DE META
-st.subheader(f"🎯 Cumplimiento de Meta (mínimo {META:.0f})")
+st.subheader(f"🎯 Cumplimiento de Meta (mínimo {META:.1f})")
 meta_data = [{'Dimensión': nom, 'Valor': df_filtrado[df_filtrado['CU'] == cu_selected[-1]][clave].mean()} for nom, clave in dimensiones.items() if not np.isnan(df_filtrado[df_filtrado['CU'] == cu_selected[-1]][clave].mean())]
 if meta_data:
     df_meta = pd.DataFrame(meta_data)
@@ -383,7 +386,6 @@ if text_cols_existentes:
     textos = df_filtrado[col_texto].dropna().astype(str)
     textos = textos[textos.str.strip() != '']
     
-    # Filtro anti-basura por si acaso
     palabras_basura = ['import streamlit', 'st.write', '>>>', 'streamlit run', 'How to use']
     for basura in palabras_basura:
         textos = textos[~textos.str.contains(basura, case=False, na=False)]
