@@ -606,3 +606,18 @@ if text_cols_existentes:
                 df_words = pd.DataFrame(counter, columns=['Palabra', 'Frecuencia'])
                 fig_words = px.bar(df_words, x='Frecuencia', y='Palabra', orientation='h',
                                    title='Top 20 palabras', template=template,
+                                   color='Frecuencia', color_continuous_scale='Reds')
+                fig_words.update_layout(height=500, yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig_words, use_container_width=True, config=plot_config)
+            else:
+                st.info("No se encontraron palabras significativas.")
+    else:
+        st.info("No hay comentarios en esta categoría para los datos seleccionados.")
+else:
+    st.info("💬 No se detectaron columnas de comentarios.")
+
+st.divider()
+
+# ============================================================
+# 9. DATOS CRUDOS
+#
