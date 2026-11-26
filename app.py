@@ -25,7 +25,7 @@ COLORES_CU = {
     'Q4': '#ffc107',   # Amarillo
 }
 COLOR_META = '#C8102E'
-META = 8.0
+META = 8.5
 
 # ============================================================
 # CARGA DE DATOS (DINÁMICA Q1..Q4)
